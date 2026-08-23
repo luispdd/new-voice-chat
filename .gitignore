@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+tmp/
+.angular/
+.nx/
+
+# Cache
+.cache/
+.pytest_cache/
+
+# Local Environment & Keys
+.env
+.env.local

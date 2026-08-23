@@ -1,0 +1,39 @@
+{
+  "name": "voice-chat-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "bunx nx serve frontend",
+    "build": "bunx nx build frontend",
+    "backend": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py",
+    "backend:dev": "PYTHONPATH=. uv run --project apps/backend uvicorn apps.backend.server:app --reload --port 8000 --ssl-certfile cert.pem --ssl-keyfile key.pem",
+    "docker:up": "docker compose up -d mongodb",
+    "docker:down": "docker compose down"
+  },
+  "dependencies": {
+    "@angular/animations": "^20.0.0",
+    "@angular/common": "^20.0.0",
+    "@angular/compiler": "^20.0.0",
+    "@angular/core": "^20.0.0",
+    "@angular/forms": "^20.0.0",
+    "@angular/platform-browser": "^20.0.0",
+    "@angular/platform-browser-dynamic": "^20.0.0",
+    "@angular/router": "^20.0.0",
+    "@primeuix/themes": "^1.0.0",
+    "primeicons": "^7.0.0",
+    "primeng": "^19.0.0",
+    "rxjs": "^7.8.0",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^20.0.0",
+    "@angular/cli": "^20.0.0",
+    "@angular/compiler-cli": "^20.0.0",
+    "@nx/angular": "^20.4.0",
+    "@nx/js": "^20.4.0",
+    "@nx/workspace": "^20.4.0",
+    "nx": "^20.4.0",
+    "typescript": "~5.8.2"
+  }
+}
