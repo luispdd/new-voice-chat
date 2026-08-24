@@ -17,6 +17,17 @@ def get_tokenizer():
     return _tokenizer
 
 
+def get_stt_model():
+    """Warmup and initialize tokenizer and Moonshine ONNX model."""
+    get_tokenizer()
+    dummy = np.zeros(16000, dtype=np.float32)
+    try:
+        moonshine_onnx.transcribe(dummy, model=settings.stt_model_name)
+    except Exception as e:
+        print(f"STT warmup info: {e}")
+    return True
+
+
 def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     """
     Convert incoming audio bytes (WAV, WebM, MP3, etc.) to 16kHz mono float32 numpy array.
