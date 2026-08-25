@@ -19,7 +19,7 @@ export class AudioRecordService {
   private vadActive = false;
   private silenceTimer: any = null;
   private readonly silenceThreshold = 0.018;
-  private readonly silenceDurationMs = 1200;
+  private readonly silenceDurationMs = 2800;
 
   get isRecordingActive(): boolean {
     return this.isRecording;

@@ -4,8 +4,10 @@ Piper TTS Model Management.
 Handles downloading and caching Piper voice models from HuggingFace Hub.
 Uses ONNX Runtime for inference.
 
-Pattern aligned with:
-https://github.com/luispdd/pdf-reader/blob/main/backend/common/model_manager.py
+Usage:
+    from apps.backend.common.model_manager import load_piper_voice_model
+
+    voice_model = load_piper_voice_model()
 """
 
 import json
