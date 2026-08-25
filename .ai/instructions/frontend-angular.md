@@ -6,6 +6,10 @@
 - **UI Library**: PrimeNG (`primeng`, `primeicons`, `@primeuix/themes`).
 - **Styling**: SCSS with custom design system tokens, dark glassmorphism, TailwindCSS utility classes and responsive layouts.
 - **Root Directory**: `apps/frontend/`
+- **Avoid using NgZone**: The frontend must be completely zoneless.
+- **Use Angular Signals**: The frontend must use Angular Signals for state management.
+- **Use Signal based input and output in conponents**: Always use signal based input() and output() instead of the old @Input and @Output ones.
+- **Create independent files for templates, SCSS and test files**: Do not add all the content in the `.ts` file. Make sure the component generator is configured to proceed following that pattern.
 
 ## Core Modules & Architecture
 - `src/app/core/api.service.ts`: REST and WebSocket client handling sessions, messages, STT transcription, and real-time streaming.

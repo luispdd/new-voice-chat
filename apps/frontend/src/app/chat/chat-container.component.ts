@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -24,7 +24,7 @@ import { VoiceInputComponent } from './voice-input.component';
   template: `
     <div class="chat-app-layout">
       <!-- Sidebar / Session Drawer -->
-      <aside class="sessions-sidebar" [ngClass]="{ open: isSidebarOpen }">
+      <aside class="sessions-sidebar" [ngClass]="{ open: isSidebarOpen() }">
         <div class="sidebar-header">
           <h2><i class="pi pi-bolt"></i> Voice Companion</h2>
           <button class="icon-btn" (click)="createNewSession()" title="New Chat">
@@ -34,9 +34,9 @@ import { VoiceInputComponent } from './voice-input.component';
 
         <div class="sessions-list">
           <div
-            *ngFor="let s of sessions"
+            *ngFor="let s of sessions()"
             class="session-item"
-            [ngClass]="{ active: s.session_id === currentSessionId }"
+            [ngClass]="{ active: s.session_id === currentSessionId() }"
             (click)="selectSession(s.session_id)"
           >
             <i class="pi pi-comment"></i>
@@ -48,9 +48,9 @@ import { VoiceInputComponent } from './voice-input.component';
         </div>
 
         <div class="sidebar-footer">
-          <div class="health-badge" *ngIf="healthInfo">
+          <div class="health-badge" *ngIf="healthInfo()">
             <span class="status-dot"></span>
-            <span>{{ healthInfo.engine | uppercase }} ({{ healthInfo.model }})</span>
+            <span>{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
           </div>
         </div>
       </aside>
@@ -60,20 +60,20 @@ import { VoiceInputComponent } from './voice-input.component';
         <!-- Top Toolbar -->
         <header class="chat-header glass-panel">
           <div class="header-left">
-            <button class="menu-btn" (click)="isSidebarOpen = !isSidebarOpen">
+            <button class="menu-btn" (click)="isSidebarOpen.set(!isSidebarOpen())">
               <i class="pi pi-bars"></i>
             </button>
             <div class="session-info">
-              <h1>{{ currentSessionTitle }}</h1>
-              <span class="sub-status">{{ isConnected ? 'Connected' : 'Connecting...' }}</span>
+              <h1>{{ currentSessionTitle() }}</h1>
+              <span class="sub-status">{{ isConnected() ? 'Connected' : 'Connecting...' }}</span>
             </div>
           </div>
 
           <div class="header-right">
             <app-visualizer
-              [isActive]="isRecording"
-              [isSpeaking]="isSpeaking"
-              [level]="audioLevel"
+              [isActive]="isRecording()"
+              [isSpeaking]="isSpeaking()"
+              [level]="audioLevel()"
             ></app-visualizer>
           </div>
         </header>
@@ -81,9 +81,9 @@ import { VoiceInputComponent } from './voice-input.component';
         <!-- Message Stream -->
         <section class="messages-viewport glass-panel">
           <app-chat-history
-            [messages]="messages"
-            [isStreaming]="isStreaming"
-            [streamingText]="streamingText"
+            [messages]="messages()"
+            [isStreaming]="isStreaming()"
+            [streamingText]="streamingText()"
             (onPlayAudio)="playMessageSpeech($event)"
           ></app-chat-history>
         </section>
@@ -91,22 +91,24 @@ import { VoiceInputComponent } from './voice-input.component';
         <!-- Input Bar -->
         <footer class="chat-input-bar glass-panel">
           <app-voice-input
-            [isRecording]="isRecording"
-            [isProcessing]="isProcessingVoice"
+            [isRecording]="isRecording()"
+            [isProcessing]="isProcessingVoice()"
+            [disabled]="isSpeaking() || isStreaming()"
             (onToggleMic)="toggleRecording()"
           ></app-voice-input>
 
           <div class="input-wrapper">
             <input
               type="text"
-              [(ngModel)]="inputText"
+              [ngModel]="inputText()"
+              (ngModelChange)="inputText.set($event)"
               placeholder="Ask anything or speak into your microphone..."
               (keydown.enter)="sendText()"
-              [disabled]="isStreaming || isProcessingVoice"
+              [disabled]="isStreaming() || isProcessingVoice()"
             />
             <button
               class="send-btn"
-              [disabled]="!inputText.trim() || isStreaming || isProcessingVoice"
+              [disabled]="!inputText().trim() || isStreaming() || isProcessingVoice()"
               (click)="sendText()"
             >
               <i class="pi pi-send"></i>
@@ -114,7 +116,7 @@ import { VoiceInputComponent } from './voice-input.component';
           </div>
 
           <button
-            *ngIf="isSpeaking"
+            *ngIf="isSpeaking()"
             class="stop-audio-btn"
             (click)="stopSpeechPlayback()"
             title="Stop audio playback"
@@ -388,21 +390,22 @@ import { VoiceInputComponent } from './voice-input.component';
   `],
 })
 export class ChatContainerComponent implements OnInit, OnDestroy {
-  sessions: Session[] = [];
-  currentSessionId = '';
-  currentSessionTitle = 'New Conversation';
-  messages: Message[] = [];
-  inputText = '';
+  sessions = signal<Session[]>([]);
+  currentSessionId = signal<string>('');
+  currentSessionTitle = signal<string>('New Conversation');
+  messages = signal<Message[]>([]);
+  inputText = signal<string>('');
 
-  isSidebarOpen = false;
-  isConnected = false;
-  isStreaming = false;
-  streamingText = '';
-  isRecording = false;
-  isProcessingVoice = false;
-  isSpeaking = false;
-  audioLevel = 0;
-  healthInfo: any = null;
+  isSidebarOpen = signal<boolean>(false);
+  isConnected = signal<boolean>(false);
+  isStreaming = signal<boolean>(false);
+  streamingText = signal<string>('');
+  isRecording = signal<boolean>(false);
+  isProcessingVoice = signal<boolean>(false);
+  isSpeaking = signal<boolean>(false);
+  isVadActive = signal<boolean>(false);
+  audioLevel = signal<number>(0);
+  healthInfo = signal<any>(null);
 
   private subs = new Subscription();
 
@@ -414,8 +417,9 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   async ngOnInit() {
     try {
-      this.healthInfo = await this.api.getHealth();
-      this.isConnected = true;
+      const health = await this.api.getHealth();
+      this.healthInfo.set(health);
+      this.isConnected.set(true);
     } catch (e) {
       console.warn('Backend not yet reachable', e);
     }
@@ -425,7 +429,14 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     // Listen to audio levels
     this.subs.add(
       this.audioRecord.audioLevel.subscribe((level) => {
-        this.audioLevel = level;
+        this.audioLevel.set(level);
+      })
+    );
+
+    // Sync recording state
+    this.subs.add(
+      this.audioRecord.isRecording.subscribe((isRecording) => {
+        this.isRecording.set(isRecording);
       })
     );
 
@@ -436,10 +447,15 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
       })
     );
 
-    // Listen to playback state
+    // Listen to playback state & auto-reactivate VAD upon completion
     this.subs.add(
-      this.audioPlayback.isPlaying.subscribe((playing) => {
-        this.isSpeaking = playing;
+      this.audioPlayback.isPlaying.subscribe(async (playing) => {
+        this.isSpeaking.set(playing);
+        if (playing && this.isRecording()) {
+          this.audioRecord.stopRecording();
+        } else if (!playing && !this.isStreaming() && !this.isProcessingVoice()) {
+          await this.restartVadIfActive();
+        }
       })
     );
 
@@ -453,14 +469,16 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.subs.unsubscribe();
+    this.isVadActive.set(false);
     this.audioRecord.stopRecording();
     this.audioPlayback.stopPlayback();
   }
 
   async loadSessions() {
-    this.sessions = await this.api.getSessions();
-    if (this.sessions.length > 0) {
-      this.selectSession(this.sessions[0].session_id);
+    const sessions = await this.api.getSessions();
+    this.sessions.set(sessions);
+    if (sessions.length > 0) {
+      this.selectSession(sessions[0].session_id);
     } else {
       await this.createNewSession();
     }
@@ -468,27 +486,28 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   async createNewSession() {
     const session = await this.api.createSession();
-    this.sessions.unshift(session);
+    this.sessions.update((s) => [session, ...s]);
     this.selectSession(session.session_id);
   }
 
   async selectSession(sessionId: string) {
-    this.currentSessionId = sessionId;
-    const current = this.sessions.find((s) => s.session_id === sessionId);
+    this.currentSessionId.set(sessionId);
+    const current = this.sessions().find((s) => s.session_id === sessionId);
     if (current) {
-      this.currentSessionTitle = current.title;
+      this.currentSessionTitle.set(current.title);
     }
-    this.messages = await this.api.getMessages(sessionId);
-    this.isSidebarOpen = false;
+    const msgs = await this.api.getMessages(sessionId);
+    this.messages.set(msgs);
+    this.isSidebarOpen.set(false);
   }
 
   async deleteSession(sessionId: string, event: Event) {
     event.stopPropagation();
     await this.api.deleteSession(sessionId);
-    this.sessions = this.sessions.filter((s) => s.session_id !== sessionId);
-    if (this.currentSessionId === sessionId) {
-      if (this.sessions.length > 0) {
-        this.selectSession(this.sessions[0].session_id);
+    this.sessions.update((s) => s.filter((item) => item.session_id !== sessionId));
+    if (this.currentSessionId() === sessionId) {
+      if (this.sessions().length > 0) {
+        this.selectSession(this.sessions()[0].session_id);
       } else {
         await this.createNewSession();
       }
@@ -496,76 +515,151 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   }
 
   async sendText() {
-    if (!this.inputText.trim() || this.isStreaming) return;
-    const text = this.inputText.trim();
-    this.inputText = '';
+    const text = this.inputText().trim();
+    if (!text || this.isStreaming()) return;
+    this.inputText.set('');
 
     // Optimistically add user message
-    this.messages.push({
-      session_id: this.currentSessionId,
-      role: 'user',
-      text,
-      timestamp: new Date().toISOString(),
-    });
+    this.messages.update((msgs) => [
+      ...msgs,
+      {
+        session_id: this.currentSessionId(),
+        role: 'user',
+        text,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
 
     // Send via WebSocket for streaming text & audio synthesis
-    this.isStreaming = true;
-    this.streamingText = '';
+    this.isStreaming.set(true);
+    this.streamingText.set('');
     this.api.sendWsMessage({
       type: 'text',
-      session_id: this.currentSessionId,
+      session_id: this.currentSessionId(),
       text,
     });
   }
 
   async toggleRecording() {
-    if (this.isRecording) {
-      const wav = this.audioRecord.stopRecording();
-      this.isRecording = false;
-      if (wav) {
-        await this.handleAudioChunk(wav);
-      }
+    if (this.isVadActive() || this.isRecording()) {
+      this.isVadActive.set(false);
+      this.audioRecord.stopRecording();
     } else {
+      if (this.isSpeaking() || this.isProcessingVoice() || this.isStreaming()) {
+        return;
+      }
+      this.isVadActive.set(true);
       try {
         await this.audioRecord.startRecording();
-        this.isRecording = true;
       } catch (err) {
+        this.isVadActive.set(false);
         alert('Could not access microphone. Please check browser permissions and HTTPS connection.');
       }
     }
   }
 
   private async handleAudioChunk(blob: Blob) {
-    this.isProcessingVoice = true;
+    this.isProcessingVoice.set(true);
+    let shouldRestartVad = false;
+
     try {
       const transcribedText = await this.api.transcribeAudio(blob);
-      if (transcribedText.trim()) {
-        this.inputText = transcribedText;
+      if (transcribedText && transcribedText.trim()) {
+        this.inputText.set(transcribedText);
         await this.sendText();
+      } else {
+        // Empty audio transcription detected
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            session_id: this.currentSessionId(),
+            role: 'assistant',
+            text: 'No speech detected. Please speak into the microphone.',
+            is_error: true,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        shouldRestartVad = true;
       }
     } catch (e) {
       console.error('STT error:', e);
+      this.messages.update((msgs) => [
+        ...msgs,
+        {
+          session_id: this.currentSessionId(),
+          role: 'assistant',
+          text: 'Failed to transcribe audio. Please try again.',
+          is_error: true,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      shouldRestartVad = true;
     } finally {
-      this.isProcessingVoice = false;
+      this.isProcessingVoice.set(false);
+      if (shouldRestartVad) {
+        await this.restartVadIfActive();
+      }
     }
   }
 
-  private handleWsEvent(event: any) {
+  private async handleWsEvent(event: any) {
     if (event.type === 'token') {
-      this.streamingText += event.token;
+      if (this.isRecording()) {
+        this.audioRecord.stopRecording();
+      }
+      this.streamingText.update((t) => t + event.token);
     } else if (event.type === 'audio_sentence') {
+      if (this.isRecording()) {
+        this.audioRecord.stopRecording();
+      }
       if (event.audio) {
         this.audioPlayback.enqueueBase64Wav(event.audio);
       }
     } else if (event.type === 'done') {
-      this.messages.push({
-        session_id: this.currentSessionId,
-        role: 'assistant',
-        text: event.full_text,
-        timestamp: new Date().toISOString(),
-      });
-      this.isStreaming = false;
-      this.streamingText = '';
+      const isError = !event.full_text || event.full_text.trim().startsWith('[Error') || event.full_text.trim() === '';
+      this.messages.update((msgs) => [
+        ...msgs,
+        {
+          session_id: this.currentSessionId(),
+          role: 'assistant',
+          text: event.full_text || 'Error: Empty response received from server.',
+          is_error: isError,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      this.isStreaming.set(false);
+      this.streamingText.set('');
+
+      if (!this.isSpeaking()) {
+        await this.restartVadIfActive();
+      }
+    } else if (event.type === 'error') {
+      this.messages.update((msgs) => [
+        ...msgs,
+        {
+          session_id: this.currentSessionId(),
+          role: 'assistant',
+          text: event.message || 'Error communicating with assistant.',
+          is_error: true,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      this.isStreaming.set(false);
+      this.streamingText.set('');
+      await this.restartVadIfActive();
+    }
+  }
+
+  private async restartVadIfActive() {
+    if (this.isVadActive() && !this.isRecording() && !this.isSpeaking() && !this.isStreaming() && !this.isProcessingVoice()) {
+      try {
+        await new Promise((r) => setTimeout(r, 100));
+        if (this.isVadActive() && !this.isRecording() && !this.isSpeaking() && !this.isStreaming() && !this.isProcessingVoice()) {
+          await this.audioRecord.startRecording();
+        }
+      } catch (e) {
+        console.warn('Could not auto-reactivate VAD:', e);
+      }
     }
   }
 

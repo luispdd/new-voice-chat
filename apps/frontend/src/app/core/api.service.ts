@@ -16,6 +16,7 @@ export interface Message {
   text: string;
   timestamp?: string;
   audio_url?: string;
+  is_error?: boolean;
 }
 
 @Injectable({

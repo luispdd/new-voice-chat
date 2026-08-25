@@ -27,3 +27,8 @@ Converts assistant text responses into natural, low-latency spoken audio using P
   - Response: `audio/wav` binary stream.
 - `WebSocket /ws/chat`:
   - Outbound Event: `{ type: "audio_sentence", sentence: string, audio: string (base64) }`
+
+## Usage constraints
+1. **Text filtering**:
+   - If the response contains text with special characters, like '*', it should not read the word 'asterisk'.
+   - If the response contains emoticons, like '😊', it should not read 'smiley face'.

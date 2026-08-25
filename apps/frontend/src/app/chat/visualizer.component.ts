@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -6,12 +6,12 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="visualizer-container" [ngClass]="{ active: isActive, speaking: isSpeaking }">
+    <div class="visualizer-container" [ngClass]="{ active: isActive(), speaking: isSpeaking() }">
       <div class="glow-ring ring-1"></div>
       <div class="glow-ring ring-2"></div>
       <div class="glow-ring ring-3"></div>
       <div class="orb">
-        <i class="pi" [ngClass]="isSpeaking ? 'pi-volume-up' : (isActive ? 'pi-microphone' : 'pi-sparkles')"></i>
+        <i class="pi" [ngClass]="isSpeaking() ? 'pi-volume-up' : (isActive() ? 'pi-microphone' : 'pi-sparkles')"></i>
       </div>
     </div>
   `,
@@ -96,7 +96,7 @@ import { CommonModule } from '@angular/common';
   `],
 })
 export class VisualizerComponent {
-  @Input() isActive = false;
-  @Input() isSpeaking = false;
-  @Input() level = 0;
+  isActive = input<boolean>(false);
+  isSpeaking = input<boolean>(false);
+  level = input<number>(0);
 }

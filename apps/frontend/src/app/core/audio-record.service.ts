@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Subject, Observable } from 'rxjs';
+import { Subject, BehaviorSubject, Observable } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -9,8 +9,9 @@ export class AudioRecordService {
   private mediaStream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
+  private gainNode: GainNode | null = null;
 
-  private isRecording = false;
+  private isRecording$ = new BehaviorSubject<boolean>(false);
   private audioChunks: Float32Array[] = [];
   private audioLevel$ = new Subject<number>();
   private audioChunkReady$ = new Subject<Blob>();
@@ -21,8 +22,12 @@ export class AudioRecordService {
   private readonly silenceThreshold = 0.018;
   private readonly silenceDurationMs = 2800;
 
+  get isRecording(): Observable<boolean> {
+    return this.isRecording$.asObservable();
+  }
+
   get isRecordingActive(): boolean {
-    return this.isRecording;
+    return this.isRecording$.value;
   }
 
   get audioLevel(): Observable<number> {
@@ -34,7 +39,7 @@ export class AudioRecordService {
   }
 
   async startRecording(): Promise<void> {
-    if (this.isRecording) return;
+    if (this.isRecording$.value) return;
 
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -55,13 +60,17 @@ export class AudioRecordService {
       this.analyser.fftSize = 512;
 
       this.scriptProcessor = this.audioContext.createScriptProcessor(2048, 1, 1);
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = 0; // Mute gain node to prevent mic input echoing to speakers
+
       this.audioChunks = [];
-      this.isRecording = true;
+      this.vadActive = false;
+      this.isRecording$.next(true);
 
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
       this.scriptProcessor.onaudioprocess = (e) => {
-        if (!this.isRecording) return;
+        if (!this.isRecording$.value) return;
         const inputData = e.inputBuffer.getChannelData(0);
         this.audioChunks.push(new Float32Array(inputData));
 
@@ -85,8 +94,7 @@ export class AudioRecordService {
           if (!this.silenceTimer) {
             this.silenceTimer = setTimeout(() => {
               if (this.vadActive && this.audioChunks.length > 5) {
-                this.vadActive = false;
-                this.emitWavChunk();
+                this.stopRecording();
               }
             }, this.silenceDurationMs);
           }
@@ -95,7 +103,8 @@ export class AudioRecordService {
 
       source.connect(this.analyser);
       this.analyser.connect(this.scriptProcessor);
-      this.scriptProcessor.connect(this.audioContext.destination);
+      this.scriptProcessor.connect(this.gainNode);
+      this.gainNode.connect(this.audioContext.destination);
 
     } catch (err) {
       console.error('Error starting audio recording:', err);
@@ -105,7 +114,11 @@ export class AudioRecordService {
   }
 
   stopRecording(): Blob | null {
-    this.isRecording = false;
+    if (!this.isRecording$.value && this.audioChunks.length === 0) {
+      return null;
+    }
+
+    this.isRecording$.next(false);
     this.vadActive = false;
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
@@ -115,6 +128,10 @@ export class AudioRecordService {
     if (this.scriptProcessor) {
       this.scriptProcessor.disconnect();
       this.scriptProcessor = null;
+    }
+    if (this.gainNode) {
+      this.gainNode.disconnect();
+      this.gainNode = null;
     }
     if (this.analyser) {
       this.analyser.disconnect();
@@ -129,19 +146,16 @@ export class AudioRecordService {
       this.audioContext = null;
     }
 
-    if (this.audioChunks.length > 0) {
+    this.audioLevel$.next(0);
+
+    if (this.audioChunks.length > 5) {
       const wavBlob = this.exportWAV(this.audioChunks, 16000);
       this.audioChunks = [];
+      this.audioChunkReady$.next(wavBlob);
       return wavBlob;
     }
-    return null;
-  }
-
-  private emitWavChunk(): void {
-    if (this.audioChunks.length === 0) return;
-    const wavBlob = this.exportWAV(this.audioChunks, 16000);
     this.audioChunks = [];
-    this.audioChunkReady$.next(wavBlob);
+    return null;
   }
 
   private exportWAV(chunks: Float32Array[], sampleRate: number): Blob {

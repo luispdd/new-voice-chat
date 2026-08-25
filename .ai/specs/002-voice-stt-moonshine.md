@@ -18,6 +18,10 @@ Transcribes user vocal input captured in the browser into text using client-side
    - Returns sanitized transcription string.
 4. **Warmup**:
    - Pre-warms the tokenizer and model during server startup via `get_stt_model()`.
+5. **Detect backend response**:
+   - The UI should display a loading indicator while the LLM is generating the response.
+   - In case of error or empty response, it must display an error message in red. The loading indicator must be removed and the VAD system must be reactivated.
+   - If the response is received the loading indicator must be removed and the VAD system must be reactivated.
 
 ## API Contracts
 - `POST /api/transcribe`:
