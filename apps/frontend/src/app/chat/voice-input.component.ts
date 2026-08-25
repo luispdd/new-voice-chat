@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -9,15 +9,37 @@ import { CommonModule } from '@angular/common';
     <div class="voice-controls">
       <button
         class="mic-button"
-        [ngClass]="{ recording: isRecording, processing: isProcessing }"
+        [ngClass]="{
+          recording: isRecording(),
+          processing: isProcessing(),
+          disabled: disabled() || isProcessing()
+        }"
+        [disabled]="disabled() || isProcessing()"
         (click)="onToggleMic.emit()"
-        [title]="isRecording ? 'Click to stop recording' : 'Click to talk (VAD active)'"
+        [title]="
+          isProcessing()
+            ? 'Processing voice...'
+            : isRecording()
+            ? 'Click to stop recording'
+            : disabled()
+            ? 'Microphone unavailable while assistant is speaking'
+            : 'Click to talk (VAD active)'
+        "
       >
-        <i class="pi" [ngClass]="isRecording ? 'pi-stop-circle' : 'pi-microphone'"></i>
+        <i
+          class="pi"
+          [ngClass]="
+            isProcessing()
+              ? 'pi-spin pi-spinner'
+              : isRecording()
+              ? 'pi-stop-circle'
+              : 'pi-microphone'
+          "
+        ></i>
       </button>
 
-      <span *ngIf="isRecording" class="recording-label">Listening...</span>
-      <span *ngIf="isProcessing" class="recording-label">Processing voice...</span>
+      <span *ngIf="isRecording()" class="recording-label">Listening...</span>
+      <span *ngIf="isProcessing()" class="recording-label">Processing voice...</span>
     </div>
   `,
   styles: [`
@@ -42,7 +64,7 @@ import { CommonModule } from '@angular/common';
       transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
       box-shadow: 0 4px 15px rgba(2, 132, 199, 0.3);
 
-      &:hover {
+      &:hover:not(:disabled) {
         transform: scale(1.08);
         box-shadow: 0 6px 20px rgba(2, 132, 199, 0.5);
       }
@@ -55,6 +77,14 @@ import { CommonModule } from '@angular/common';
 
       &.processing {
         background: linear-gradient(135deg, #a855f7, #7e22ce);
+        box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+      }
+
+      &.disabled, &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
       }
     }
 
@@ -78,7 +108,8 @@ import { CommonModule } from '@angular/common';
   `],
 })
 export class VoiceInputComponent {
-  @Input() isRecording = false;
-  @Input() isProcessing = false;
-  @Output() onToggleMic = new EventEmitter<void>();
+  isRecording = input<boolean>(false);
+  isProcessing = input<boolean>(false);
+  disabled = input<boolean>(false);
+  onToggleMic = output<void>();
 }

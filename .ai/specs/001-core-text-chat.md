@@ -16,7 +16,18 @@ Provides text-based conversation capabilities supporting real-time token streami
    - WebSocket `/ws/chat` for bi-directional live token streaming and simultaneous sentence-level voice synthesis.
 3. **Prompt Design**:
    - System prompt tailored for voice-first interactions: concise, conversational, avoiding markdown bloat and unreadable tables.
+   - The responses should not contain emoticons, emojis or other unicode characters that are not readable.
 4. **Error Handling**: Graceful fallback when the LLM service is offline or unreachable.
+5. **Conversation history**:
+   - The user can create, rename and delete conversations.
+   - The conversations should be displayed in the sidebar.
+   - The user can switch between conversations.
+   - The user can view the conversation history.
+6. **UI**:
+   - The user can switch between conversations.
+   - The user can view the conversation history.
+   - Both the list of conversation history and the messages list should be scrollable.
+   - The last message should be always visible unless the user scroll to the previous messages.
 
 ## API Contracts
 - `POST /api/chat`:
