@@ -15,12 +15,13 @@ export class AudioRecordService {
   private audioChunks: Float32Array[] = [];
   private audioLevel$ = new Subject<number>();
   private audioChunkReady$ = new Subject<Blob>();
+  private sampleRate = 16000;
 
   // VAD parameters
   private vadActive = false;
   private silenceTimer: any = null;
   private readonly silenceThreshold = 0.018;
-  private readonly silenceDurationMs = 2800;
+  private readonly silenceDurationMs = 1500;
 
   get isRecording(): Observable<boolean> {
     return this.isRecording$.asObservable();
@@ -54,6 +55,7 @@ export class AudioRecordService {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 16000,
       });
+      this.sampleRate = this.audioContext.sampleRate;
 
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.analyser = this.audioContext.createAnalyser();
@@ -149,7 +151,7 @@ export class AudioRecordService {
     this.audioLevel$.next(0);
 
     if (this.audioChunks.length > 5) {
-      const wavBlob = this.exportWAV(this.audioChunks, 16000);
+      const wavBlob = this.exportWAV(this.audioChunks, this.sampleRate);
       this.audioChunks = [];
       this.audioChunkReady$.next(wavBlob);
       return wavBlob;

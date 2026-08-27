@@ -9,7 +9,7 @@
 Fix the Speech-to-Text Voice Activity Detection (VAD) lifecycle, audio recording termination, local feedback issues, and response state flow:
 
 1. **Automatic Stop on Silence**:
-   - In `AudioRecordService`, when silence is detected for `silenceDurationMs = 2800ms` after vocal activity (`vadActive`), automatically stop recording and emit the recorded WAV audio chunk.
+   - In `AudioRecordService`, when silence is detected for `silenceDurationMs = 1500ms` after vocal activity (`vadActive`), automatically stop recording and emit the recorded WAV audio chunk.
    - Update `isRecording` state so `ChatContainerComponent` transitions out of the recording state and updates the UI accordingly.
 
 2. **Prevent Microphone Echo/Feedback**:

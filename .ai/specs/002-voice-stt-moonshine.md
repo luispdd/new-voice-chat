@@ -10,7 +10,7 @@ Transcribes user vocal input captured in the browser into text using client-side
    - A button with an icon with the shape of a microphone activates and deactivates the VAD system.
    - When activated, it monitors microphone stream with `AnalyserNode`.
    - Computes RMS volume and detects vocal activity threshold (`silenceThreshold = 0.018`).
-   - Automatically stops recording and emits a WAV chunk after `silenceDurationMs = 2800ms` of silence.
+   - Automatically stops recording and emits a WAV chunk after `silenceDurationMs = 1500ms` of silence.
 2. **Audio Normalization**:
    - Resamples multi-channel or variable sample rate audio into 16kHz mono `float32` array (`audio_bytes_to_float32`).
 3. **Transcription Inference**:

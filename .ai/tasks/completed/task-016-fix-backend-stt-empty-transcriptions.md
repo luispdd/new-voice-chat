@@ -1,6 +1,6 @@
 # Task 016: Fix Backend STT Intermittent Empty Transcriptions
 
-- **Status**: Active (Priority 1)
+- **Status**: Completed (2026-08-27)
 - **Target Component**: `apps/backend/services/stt_service.py`, `apps/backend/routers/transcribe.py`, `apps/frontend/src/app/core/audio-record.service.ts`
 - **Spec Reference**: [002-voice-stt-moonshine.md](../../specs/002-voice-stt-moonshine.md)
 
