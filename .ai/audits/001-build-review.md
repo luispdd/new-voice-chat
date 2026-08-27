@@ -33,7 +33,7 @@ While the fundamental components (FastAPI server, MongoDB persistence, Moonshine
 ### 🔴 Spec 002: STT with Moonshine ONNX & VAD
 
 1. **VAD Automatic Recording Termination & State Management** ([audio-record.service.ts](../../apps/frontend/src/app/core/audio-record.service.ts#L85-L93)):
-   - **Spec Requirement**: Automatically stops recording and emits a WAV chunk after `silenceDurationMs = 2800ms` of silence.
+   - **Spec Requirement**: Automatically stops recording and emits a WAV chunk after `silenceDurationMs = 1500ms` of silence.
    - **Current Code**: `silenceTimer` triggers `emitWavChunk()`, which flushes `audioChunks` and emits the Blob, but leaves `this.isRecording = true`. The microphone remains live and capturing audio while the backend is transcribing and the assistant is speaking.
    - **Impact**: The UI remains stuck in "Listening..." state, and speaker output from TTS is captured by the live microphone, triggering infinite feedback loops where the assistant converses with itself.
 
