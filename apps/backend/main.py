@@ -15,6 +15,7 @@ def main():
     print(f"📦 MongoDB:         {settings.mongo_uri}")
     print(f"🎙️ STT Model:       {settings.stt_model_name}")
     print(f"🔊 TTS Voice:       {settings.tts_repo_id}")
+    print(f"🔄 Auto-Reload:     {settings.reload} (dirs: {settings.reload_dirs if settings.reload else 'N/A'})")
     print("=" * 60)
 
     # Check for SSL certs
@@ -30,7 +31,8 @@ def main():
         "apps.backend.server:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
+        reload=settings.reload,
+        reload_dirs=settings.reload_dirs if settings.reload else None,
         **ssl_kwargs,
     )
 

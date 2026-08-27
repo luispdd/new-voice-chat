@@ -19,6 +19,7 @@ dependencies = [
     "soundfile>=0.13.1",
     "useful-moonshine-onnx>=20251121",
     "uvicorn>=0.34.0",
+    "watchfiles>=1.2.0",
     "websockets>=15.0",
 ]
 
