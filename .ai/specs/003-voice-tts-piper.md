@@ -28,7 +28,11 @@ Converts assistant text responses into natural, low-latency spoken audio using P
 - `WebSocket /ws/chat`:
   - Outbound Event: `{ type: "audio_sentence", sentence: string, audio: string (base64) }`
 
-## Usage constraints
-1. **Text filtering**:
-   - If the response contains text with special characters, like '*', it should not read the word 'asterisk'.
-   - If the response contains emoticons, like '😊', it should not read 'smiley face'.
+## Usage constraints & Text Sanitization
+1. **Text Sanitization Pipeline**:
+   - All text must pass through a sanitization filter prior to speech synthesis and audio streaming.
+   - **Markdown Removal**: Strip link URLs (`[text](url)` -> `text`), image tags (`![alt](url)` -> `""`), inline/fenced code markers, header hashes (`#`), blockquotes (`>`), and bullet markers (`*`, `-`, `+`).
+   - **Special Characters & Markdown Bloat**: Strip standalone asterisks (`*`), bold/italic formatting (`**text**`, `*text*`, `_text_`), strikethrough (`~~text~~`), hashtags (`#`), tildes (`~`), pipes (`|`), brackets, and backslashes so words like "asterisk", "hash", or "pipe" are never vocalized.
+   - **Emojis & Unicode Symbols**: Strip Unicode emoji blocks (`0x1F000+`), Dingbats, miscellaneous symbols, decorative glyphs (`•`, `★`, `✓`), invisible format controls, and unreadable characters so symbols are never vocalized (e.g. as "smiley face" or "rocket").
+   - **Emoticons & Kaomojis**: Strip ASCII emoticons (e.g. `:)`, `:-D`, `:(`, `;-)`, `:P`, `xD`, `<3`) and kaomojis (e.g. `¯\_(ツ)_/¯`, `ಠ_ಠ`, `(^_^)`) before speech synthesis.
+   - **Punctuation & Empty Payload Handling**: Collapse whitespace, remove empty parentheses/brackets, and normalize repeated punctuation (`!!` -> `!`). Treat inputs without speakable text as silence by returning empty audio data or skipping audio sentence generation rather than raising errors.

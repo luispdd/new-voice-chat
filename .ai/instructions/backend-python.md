@@ -23,6 +23,9 @@
    - Always install `watchfiles` in `apps/backend/pyproject.toml` so Uvicorn uses OS inotify events rather than polling via `StatReload`.
    - Always route server launches through `apps/backend/main.py` so CLI arguments (`--engine`, `--model`, `--port`, `--host`, `--reload`) are properly parsed by `config.py` and `reload_dirs=["apps/backend"]` is automatically applied to prevent Uvicorn from scanning root `node_modules/`, `.venv/`, `.nx/`, or `.git/` directories (which contain 60,000+ files and spike idle CPU to 100%).
    - Keep `OMP_WAIT_POLICY=PASSIVE` for ONNX Runtime threads to prevent background spin-waiting when idle.
+6. **Voice LLM System Prompt & TTS Text Sanitization**:
+   - Apply a centralized voice-optimized system prompt that explicitly forbids emojis, ASCII emoticons, markdown formatting, bullet lists, and unreadable unicode across all chat endpoints.
+   - Always route text through a TTS sanitization filter before voice synthesis to prevent vocalization of asterisks, emojis, hashtags, or formatting artifacts.
 
 ## Common CLI Commands
 ```bash
