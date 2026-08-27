@@ -14,9 +14,13 @@ Provides text-based conversation capabilities supporting real-time token streami
 2. **Streaming Protocol**:
    - REST `/api/chat` with SSE (`text/event-stream`).
    - WebSocket `/ws/chat` for bi-directional live token streaming and simultaneous sentence-level voice synthesis.
-3. **Prompt Design**:
-   - System prompt tailored for voice-first interactions: concise, conversational, avoiding markdown bloat and unreadable tables.
-   - The responses should not contain emoticons, emojis or other unicode characters that are not readable.
+3. **Prompt Design & Voice Constraints**:
+   - System prompt tailored for voice-first interactions: concise, conversational, and natural phrasing.
+   - Explicit negative instructions preventing the LLM from outputting:
+     - Emojis (e.g. `😊`, `🚀`, `👍`) or ASCII emoticons (e.g. `:)`, `xD`, `<3`).
+     - Markdown formatting like asterisks (`*`, `**`), underscores (`_`), hash headers (`#`), backticks (`` ` ``), bullet lists, or tables.
+     - Unreadable unicode characters, decorative symbols, ASCII art, or code snippets unless requested.
+   - Enforced consistently across REST `/api/chat` (including RAG context injection) and WebSocket `/ws/chat`.
 4. **Error Handling**: Graceful fallback when the LLM service is offline or unreachable.
 5. **Conversation history**:
    - The user can create, rename and delete conversations.

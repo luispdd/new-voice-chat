@@ -8,7 +8,7 @@ export class AudioRecordService {
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
-  private scriptProcessor: ScriptProcessorNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
   private gainNode: GainNode | null = null;
 
   private isRecording$ = new BehaviorSubject<boolean>(false);
@@ -61,7 +61,6 @@ export class AudioRecordService {
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 512;
 
-      this.scriptProcessor = this.audioContext.createScriptProcessor(2048, 1, 1);
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 0; // Mute gain node to prevent mic input echoing to speakers
 
@@ -69,49 +68,96 @@ export class AudioRecordService {
       this.vadActive = false;
       this.isRecording$.next(true);
 
-      const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+      const dataArray = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
+      const preRollChunks: Float32Array[] = [];
+      const maxPreRoll = 3; // Keep ~380ms of audio before speech onset to preserve initial consonants
 
-      this.scriptProcessor.onaudioprocess = (e) => {
-        if (!this.isRecording$.value) return;
-        const inputData = e.inputBuffer.getChannelData(0);
-        this.audioChunks.push(new Float32Array(inputData));
-
-        // Calculate RMS audio level
-        this.analyser?.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
-        }
-        const rms = Math.sqrt(sum / inputData.length);
-        this.audioLevel$.next(Math.min(rms * 5, 1)); // Normalized 0-1
-
-        // Voice Activity Detection logic
-        if (rms > this.silenceThreshold) {
-          this.vadActive = true;
-          if (this.silenceTimer) {
-            clearTimeout(this.silenceTimer);
-            this.silenceTimer = null;
-          }
-        } else if (this.vadActive) {
-          if (!this.silenceTimer) {
-            this.silenceTimer = setTimeout(() => {
-              if (this.vadActive && this.audioChunks.length > 5) {
-                this.stopRecording();
-              }
-            }, this.silenceDurationMs);
+      // Modern AudioWorkletNode processor
+      const workletCode = `
+        class AudioRecorderProcessor extends AudioWorkletProcessor {
+          process(inputs) {
+            const input = inputs[0];
+            if (input && input[0] && input[0].length > 0) {
+              this.port.postMessage(input[0]);
+            }
+            return true;
           }
         }
+        registerProcessor('audio-recorder-processor', AudioRecorderProcessor);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+      try {
+        await this.audioContext.audioWorklet.addModule(workletUrl);
+      } finally {
+        URL.revokeObjectURL(workletUrl);
+      }
+
+      this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-recorder-processor');
+      this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+        this.processAudioChunk(e.data, dataArray, preRollChunks, maxPreRoll);
       };
 
       source.connect(this.analyser);
-      this.analyser.connect(this.scriptProcessor);
-      this.scriptProcessor.connect(this.gainNode);
+      this.analyser.connect(this.workletNode);
+      this.workletNode.connect(this.gainNode);
       this.gainNode.connect(this.audioContext.destination);
 
     } catch (err) {
       console.error('Error starting audio recording:', err);
       this.stopRecording();
       throw err;
+    }
+  }
+
+  private processAudioChunk(
+    inputData: Float32Array,
+    dataArray: Uint8Array<ArrayBuffer>,
+    preRollChunks: Float32Array[],
+    maxPreRoll: number
+  ): void {
+    if (!this.isRecording$.value) return;
+    const chunk = new Float32Array(inputData);
+
+    // Calculate RMS audio level
+    this.analyser?.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < inputData.length; i++) {
+      sum += inputData[i] * inputData[i];
+    }
+    const rms = Math.sqrt(sum / inputData.length);
+    this.audioLevel$.next(Math.min(rms * 5, 1)); // Normalized 0-1
+
+    // Voice Activity Detection logic
+    if (rms > this.silenceThreshold) {
+      if (!this.vadActive) {
+        this.vadActive = true;
+        // Prepend pre-roll chunks so initial consonants/phonemes are fully preserved
+        this.audioChunks = [...preRollChunks, chunk];
+        preRollChunks.length = 0;
+      } else {
+        this.audioChunks.push(chunk);
+      }
+
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+    } else if (this.vadActive) {
+      this.audioChunks.push(chunk);
+      if (!this.silenceTimer) {
+        this.silenceTimer = setTimeout(() => {
+          if (this.vadActive && this.audioChunks.length > 5) {
+            this.stopRecording();
+          }
+        }, this.silenceDurationMs);
+      }
+    } else {
+      // Keep a rolling pre-roll buffer while waiting for speech to begin
+      preRollChunks.push(chunk);
+      if (preRollChunks.length > maxPreRoll) {
+        preRollChunks.shift();
+      }
     }
   }
 
@@ -127,9 +173,10 @@ export class AudioRecordService {
       this.silenceTimer = null;
     }
 
-    if (this.scriptProcessor) {
-      this.scriptProcessor.disconnect();
-      this.scriptProcessor = null;
+    if (this.workletNode) {
+      this.workletNode.port.onmessage = null;
+      this.workletNode.disconnect();
+      this.workletNode = null;
     }
     if (this.gainNode) {
       this.gainNode.disconnect();

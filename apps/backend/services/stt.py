@@ -8,6 +8,7 @@ import moonshine_onnx
 from apps.backend.config import settings
 
 _tokenizer = None
+_stt_model: moonshine_onnx.MoonshineOnnxModel | None = None
 
 
 def get_tokenizer():
@@ -17,129 +18,108 @@ def get_tokenizer():
     return _tokenizer
 
 
-def get_stt_model():
-    """Warmup and initialize tokenizer and Moonshine ONNX model."""
-    get_tokenizer()
-    dummy = np.zeros(16000, dtype=np.float32)
-    try:
-        moonshine_onnx.transcribe(dummy, model=settings.stt_model_name)
-    except Exception as e:
-        print(f"STT warmup info: {e}")
-    return True
+def get_stt_model() -> moonshine_onnx.MoonshineOnnxModel:
+    """Warmup and initialize tokenizer and Moonshine ONNX model singleton."""
+    global _stt_model
+    if _stt_model is None:
+        get_tokenizer()
+        print(f"📦 Initializing Moonshine STT Model ({settings.stt_model_name})...")
+        _stt_model = moonshine_onnx.MoonshineOnnxModel(model_name=settings.stt_model_name)
+        dummy = np.zeros(16000, dtype=np.float32)
+        try:
+            moonshine_onnx.transcribe(dummy, model=_stt_model)
+            print("✅ Moonshine STT Model initialized and warmed up.")
+        except Exception as e:
+            print(f"⚠️ STT warmup info: {e}")
+    return _stt_model
 
 
 def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     """
-    Convert incoming audio bytes (WAV, WebM, MP3, etc.) to 16kHz mono float32 numpy array.
+    Convert incoming audio bytes (WAV, WebM, MP3, etc.) to 16kHz mono float32 numpy array
+    using pydub AudioSegment and soundfile fallback.
     """
+    if not audio_bytes or len(audio_bytes) < 100:
+        return np.zeros(0, dtype=np.float32)
+
+    # 1. Primary path: AudioSegment (standardized across reference project)
     try:
-        # Try direct soundfile read first (fastest for WAV/FLAC)
-        with sf.SoundFile(io.BytesIO(audio_bytes)) as f:
-            audio = f.read(dtype="float32")
-            samplerate = f.samplerate
-            channels = f.channels
-            # Convert multi-channel to mono
-            if audio.ndim > 1:
-                audio = np.mean(audio, axis=1)
-
-            # Compute stats of original audio
-            duration = len(audio) / samplerate
-            peak = float(np.max(np.abs(audio))) if len(audio) > 0 else 0.0
-            rms = float(np.sqrt(np.mean(audio**2))) if len(audio) > 0 else 0.0
-            print(f"[STT Diagnostics] Format: WAV (soundfile), Samplerate: {samplerate}Hz, Channels: {channels}, Duration: {duration:.3f}s, Peak: {peak:.3f}, RMS: {rms:.3f}")
-
-            # Resample to 16000Hz if needed
-            if samplerate != 16000:
-                audio_clipped = np.clip(audio, -1.0, 1.0)
-                pcm_data = (audio_clipped * 32767.0).astype(np.int16).tobytes()
-                audio_seg = AudioSegment(
-                    pcm_data,
-                    frame_rate=samplerate,
-                    sample_width=2,
-                    channels=1,
-                ).set_frame_rate(16000)
-                audio = np.array(audio_seg.get_array_of_samples(), dtype=np.float32) / 32768.0
-            return audio
-    except Exception as sf_err:
+        audio_stream = io.BytesIO(audio_bytes)
+        audio_seg = AudioSegment.from_file(audio_stream)
+        audio_seg = audio_seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+        raw_samples = audio_seg.get_array_of_samples()
+        audio_np = np.array(raw_samples, dtype=np.float32) / 32768.0
+    except Exception as pydub_err:
+        # Fallback to soundfile if AudioSegment fails
         try:
-            # Fallback to PyDub for WebM, MP3, or OGG chunks
-            audio_seg = AudioSegment.from_file(io.BytesIO(audio_bytes))
-            samplerate = audio_seg.frame_rate
-            channels = audio_seg.channels
-            audio_seg = audio_seg.set_channels(1).set_frame_rate(16000).set_sample_width(2)
-            # Convert 16-bit PCM to float32 (-1.0 to 1.0)
-            samples = np.array(audio_seg.get_array_of_samples(), dtype=np.float32)
-            samples = samples / 32768.0
-            
-            duration = len(samples) / 16000
-            peak = float(np.max(np.abs(samples))) if len(samples) > 0 else 0.0
-            rms = float(np.sqrt(np.mean(samples**2))) if len(samples) > 0 else 0.0
-            print(f"[STT Diagnostics] Format: Fallback (pydub), Orig Samplerate: {samplerate}Hz, Channels: {channels}, Duration: {duration:.3f}s, Peak: {peak:.3f}, RMS: {rms:.3f}")
-            return samples
-        except Exception as pydub_err:
-            print(f"[STT Diagnostics] Audio conversion failed. sf_err: {sf_err}, pydub_err: {pydub_err}")
+            with sf.SoundFile(io.BytesIO(audio_bytes)) as f:
+                audio = f.read(dtype="float32")
+                samplerate = f.samplerate
+                if audio.ndim > 1:
+                    audio = np.mean(audio, axis=1)
+                if samplerate != 16000:
+                    pcm_data = (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+                    audio_seg = AudioSegment(
+                        pcm_data,
+                        frame_rate=samplerate,
+                        sample_width=2,
+                        channels=1,
+                    ).set_frame_rate(16000)
+                    audio_np = np.array(audio_seg.get_array_of_samples(), dtype=np.float32) / 32768.0
+                else:
+                    audio_np = audio
+        except Exception as sf_err:
+            print(f"[STT Diagnostics] Audio conversion failed. pydub_err: {pydub_err}, sf_err: {sf_err}")
             raise
 
+    # Remove DC offset
+    if len(audio_np) > 0:
+        audio_np = audio_np - np.mean(audio_np)
 
-def _split_audio_into_chunks(audio_data: np.ndarray, samplerate: int = 16000, max_chunk_len_s: float = 8.0) -> list[np.ndarray]:
+    duration = len(audio_np) / 16000
+    peak = float(np.max(np.abs(audio_np))) if len(audio_np) > 0 else 0.0
+    rms = float(np.sqrt(np.mean(audio_np**2))) if len(audio_np) > 0 else 0.0
+    print(f"[STT Diagnostics] Audio: 16000Hz mono, Duration: {duration:.3f}s, Peak: {peak:.3f}, RMS: {rms:.3f}")
+
+    return audio_np
+
+
+def trim_silence(audio: np.ndarray, samplerate: int = 16000, frame_duration_ms: int = 30, padding_ms: int = 250) -> np.ndarray:
     """
-    Split a 1D float32 audio array into chunks of at most max_chunk_len_s.
-    Tries to split at silence points (lowest energy) to avoid clipping words.
+    Trim extended leading and trailing silence from audio to prevent Moonshine ONNX
+    decoder from early-terminating with EOS at frame 0.
     """
-    total_samples = len(audio_data)
-    max_samples = int(max_chunk_len_s * samplerate)
-    min_samples = int(0.5 * samplerate) # Minimum chunk of 0.5s to avoid tiny fragments
-    
-    if total_samples <= max_samples:
-        return [audio_data]
-        
-    chunks = []
-    start = 0
-    while start < total_samples:
-        remaining = total_samples - start
-        if remaining <= max_samples:
-            if remaining < min_samples and chunks:
-                chunks[-1] = np.concatenate([chunks[-1], audio_data[start:]])
-            else:
-                chunks.append(audio_data[start:])
-            break
-            
-        # Target size is max_samples. Search window for silence: 50% to 95% of max_samples
-        search_start = start + int(max_samples * 0.5)
-        search_end = start + int(max_samples * 0.95)
-        search_end = min(search_end, total_samples - min_samples)
-        
-        if search_start >= search_end:
-            split_idx = start + max_samples
-        else:
-            search_area = audio_data[search_start:search_end]
-            window_size = int(0.1 * samplerate) # 100ms window
-            
-            if len(search_area) < window_size:
-                split_idx = (search_start + search_end) // 2
-            else:
-                min_energy = float('inf')
-                best_offset = 0
-                step = int(0.05 * samplerate) # 50ms step
-                
-                for offset in range(0, len(search_area) - window_size, step):
-                    window = search_area[offset:offset + window_size]
-                    energy = np.sum(np.abs(window))
-                    if energy < min_energy:
-                        min_energy = energy
-                        best_offset = offset + (window_size // 2)
-                        
-                split_idx = search_start + best_offset
-                
-        chunks.append(audio_data[start:split_idx])
-        start = split_idx
-        
-    return chunks
+    if len(audio) == 0:
+        return audio
+
+    frame_size = int(samplerate * frame_duration_ms / 1000)
+    padding_samples = int(samplerate * padding_ms / 1000)
+
+    num_frames = len(audio) // frame_size
+    if num_frames == 0:
+        return audio
+
+    frames = audio[:num_frames * frame_size].reshape(num_frames, frame_size)
+    frame_rms = np.sqrt(np.mean(frames ** 2, axis=1))
+
+    max_rms = np.max(frame_rms)
+    if max_rms < 0.005:  # Audio is essentially pure silence
+        return audio
+
+    threshold = max(0.008, max_rms * 0.05)
+    active_frames = np.where(frame_rms > threshold)[0]
+    if len(active_frames) == 0:
+        return audio
+
+    start_idx = max(0, active_frames[0] * frame_size - padding_samples)
+    end_idx = min(len(audio), (active_frames[-1] + 1) * frame_size + padding_samples)
+
+    return audio[start_idx:end_idx]
 
 
 def transcribe_audio(audio_bytes: bytes) -> str:
     """
-    Transcribe raw audio bytes into text.
+    Transcribe raw audio bytes into text using Moonshine STT model.
 
     Args:
         audio_bytes: In-memory raw audio bytes from client microphone.
@@ -161,30 +141,46 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     if len(audio_data) < 1600:  # Less than 0.1 seconds of audio
         print(f"[STT Diagnostics] Audio segment too short: {len(audio_data)} samples ({duration:.3f}s)")
         return ""
-    if len(audio_data) > 60 * 16000:  # More than 60 seconds
-        print(f"[STT Diagnostics] Audio segment too long: {len(audio_data)} samples ({duration:.3f}s). Truncating to 60s.")
-        audio_data = audio_data[:60 * 16000]
 
-    # Split audio into chunks of at most 8.0s to avoid Moonshine ONNX shape limits
-    chunks = _split_audio_into_chunks(audio_data, 16000, max_chunk_len_s=8.0)
-    print(f"[STT Diagnostics] Split {len(audio_data)/16000:.3f}s audio into {len(chunks)} chunk(s) for transcription.")
+    # Trim leading/trailing silence to eliminate decoder EOS triggers at frame 0
+    trimmed_audio = trim_silence(audio_data)
+    trimmed_duration = len(trimmed_audio) / 16000
+    if len(trimmed_audio) < 1600:
+        print(f"[STT Diagnostics] Audio only contains silence: {duration:.3f}s -> {trimmed_duration:.3f}s")
+        return ""
 
-    transcriptions = []
-    for i, chunk in enumerate(chunks):
-        if len(chunk) < 1600:  # Skip tiny fragments
-            continue
-        try:
-            results = moonshine_onnx.transcribe(chunk, model=settings.stt_model_name)
-            if isinstance(results, list) and len(results) > 0:
-                text = str(results[0]).strip()
-            else:
-                text = str(results).strip()
-            print(f"[STT Diagnostics] Chunk {i+1}/{len(chunks)} ({len(chunk)/16000:.2f}s) decoded: '{text}'")
-            if text:
-                transcriptions.append(text)
-        except Exception as e:
-            print(f"[STT Diagnostics] Error transcribing chunk {i+1}: {e}")
+    if trimmed_duration < duration:
+        print(f"[STT Diagnostics] Trimmed silence: {duration:.3f}s -> {trimmed_duration:.3f}s")
 
-    final_text = " ".join(transcriptions).strip()
-    print(f"[STT Diagnostics] Final Decoded Text: '{final_text}'")
-    return final_text
+    if len(trimmed_audio) > 60 * 16000:  # More than 60 seconds
+        print(f"[STT Diagnostics] Audio segment too long: {len(trimmed_audio)} samples ({trimmed_duration:.3f}s). Truncating to 60s.")
+        trimmed_audio = trimmed_audio[:60 * 16000]
+
+    model = get_stt_model()
+
+    # Direct transcription of speech sequence
+    try:
+        results = moonshine_onnx.transcribe(trimmed_audio, model=model)
+        if isinstance(results, list) and len(results) > 0:
+            text = str(results[0]).strip()
+        else:
+            text = str(results).strip()
+
+        # Retry fallback with peak normalization if result is empty on audible speech
+        if not text and float(np.sqrt(np.mean(trimmed_audio**2))) > 0.01:
+            peak = np.max(np.abs(trimmed_audio))
+            if peak > 0:
+                normalized_audio = (trimmed_audio / peak) * 0.95
+                retry_res = moonshine_onnx.transcribe(normalized_audio, model=model)
+                if isinstance(retry_res, list) and len(retry_res) > 0:
+                    text = str(retry_res[0]).strip()
+                else:
+                    text = str(retry_res).strip()
+
+        print(f"[STT Diagnostics] Decoded Text: '{text}'")
+        return text
+    except Exception as e:
+        print(f"[STT Diagnostics] Error transcribing audio: {e}")
+        return ""
+
+

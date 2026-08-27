@@ -6,23 +6,30 @@
 - **Root Directory**: `apps/backend/`
 
 ## Core Frameworks & Libraries
-- **FastAPI, Uvicorn & Watchfiles**: Asynchronous web API with CORS and WebSocket support (`apps.backend.server:app`). `watchfiles` is required for event-driven file monitoring.
+- **FastAPI, Uvicorn & Watchfiles**: Asynchronous web API with CORS and WebSocket support. `watchfiles` is required for event-driven file monitoring.
 - **Pydantic**: Request and response schema validation.
-- **Motor / PyMongo**: Async driver for MongoDB database operations (`apps.backend.db.mongo`).
+- **Motor / PyMongo**: Async driver for MongoDB database operations.
 - **OpenAI Python SDK**: Client for OpenAI-compatible endpoints (LM Studio, Ollama, OpenRouter, OpenAI).
-- **Moonshine ONNX (`useful-moonshine-onnx`)**: Fast local Speech-to-Text inference (`apps.backend.services.stt`).
-- **Piper TTS (`piper-tts`) & ONNX Runtime**: Local neural voice synthesis with sentence streaming (`apps.backend.services.tts`).
+- **Moonshine ONNX (`useful-moonshine-onnx`)**: Fast local Speech-to-Text inference.
+- **Piper TTS (`piper-tts`) & ONNX Runtime**: Local neural voice synthesis with sentence streaming.
 - **Audio Preprocessing**: `soundfile`, `pydub`, `numpy`, and `audioop-lts` (required for Python 3.13 compatibility).
 
 ## Key Patterns
-1. **Piper Model Manager**: Follow [`apps/backend/common/model_manager.py`](../../apps/backend/common/model_manager.py) to download voice models via `hf_hub_download` from `rhasspy/piper-voices` with optimized ONNX thread sessions (`intra_op_num_threads=2`, `inter_op_num_threads=2`).
-2. **STT Normalization**: Convert incoming client audio bytes to 16kHz mono `float32` numpy arrays before feeding into Moonshine ONNX.
+1. **Piper Model Manager**: Download voice models via `hf_hub_download` from `rhasspy/piper-voices` with optimized ONNX thread sessions (`intra_op_num_threads=2`, `inter_op_num_threads=2`).
+2. **STT Service Architecture**:
+   - Always initialize and warm up `MoonshineOnnxModel(model_name="base")` singleton once in lifespan startup to avoid per-request ONNX session reloading.
+   - Decode raw audio payloads via `pydub.AudioSegment.from_file` normalized to 16kHz mono `float32` arrays in `[-1.0, 1.0]` with DC offset removal.
+   - Always run `trim_silence()` before Moonshine inference to strip leading/trailing silence with 250ms padding. Moonshine decoder early-terminates with `EOS` (empty string) if audio begins with $\ge 2$s of silence.
+   - Pass the full utterance directly to Moonshine without artificial mid-speech 8s slicing.
 3. **Sentence-Level TTS Streaming**: Split incoming LLM token stream at sentence boundaries (`. ! ? \n`) and synthesize audio sentence-by-sentence to achieve low Time-to-First-Audio (TTFA).
 4. **Lifespan Warmup**: Always warm up DB connections, tokenizer, and voice models in FastAPI's `lifespan` handler.
 5. **Development Reload & CPU Optimization**:
-   - Always install `watchfiles` in `apps/backend/pyproject.toml` so Uvicorn uses OS inotify events rather than polling via `StatReload`.
-   - Always route server launches through `apps/backend/main.py` so CLI arguments (`--engine`, `--model`, `--port`, `--host`, `--reload`) are properly parsed by `config.py` and `reload_dirs=["apps/backend"]` is automatically applied to prevent Uvicorn from scanning root `node_modules/`, `.venv/`, `.nx/`, or `.git/` directories (which contain 60,000+ files and spike idle CPU to 100%).
+   - Always install `watchfiles` so Uvicorn uses OS inotify events rather than polling via `StatReload`.
+   - Always route server launches through backend configuration entrypoints so CLI arguments (`--engine`, `--model`, `--port`, `--host`, `--reload`) are properly parsed and reload monitoring is scoped to avoid scanning root `node_modules/`, `.venv/`, `.nx/`, or `.git/` directories (which contain 60,000+ files and spike idle CPU to 100%).
    - Keep `OMP_WAIT_POLICY=PASSIVE` for ONNX Runtime threads to prevent background spin-waiting when idle.
+6. **Voice LLM System Prompt & TTS Text Sanitization**:
+   - Apply a centralized voice-optimized system prompt that explicitly forbids emojis, ASCII emoticons, markdown formatting, bullet lists, and unreadable unicode across all chat endpoints.
+   - Always route text through a TTS sanitization filter before voice synthesis to prevent vocalization of asterisks, emojis, hashtags, or formatting artifacts.
 
 ## Common CLI Commands
 ```bash

@@ -20,8 +20,8 @@ from apps.backend.db.mongo import (
     delete_session,
 )
 from apps.backend.services.stt import transcribe_audio, get_stt_model
-from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, split_into_sentences
-from apps.backend.services.llm import stream_chat_completion, generate_chat_completion
+from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, split_into_sentences, sanitize_for_tts
+from apps.backend.services.llm import stream_chat_completion, generate_chat_completion, SYSTEM_PROMPT
 from apps.backend.services.rag import ingest_document, search_relevant_chunks
 
 
@@ -143,11 +143,12 @@ async def transcribe(audio: UploadFile = File(...)):
 
 @app.post("/api/tts")
 async def synthesize(text: str = Form(...)):
-    """Synthesize text into WAV audio."""
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    """Synthesize text into WAV audio, returning empty audio for unreadable or silent input."""
+    clean_text = sanitize_for_tts(text)
+    if not clean_text:
+        return Response(content=b"", media_type="audio/wav")
 
-    wav_bytes = text_to_wav_bytes(text)
+    wav_bytes = text_to_wav_bytes(clean_text)
     return Response(content=wav_bytes, media_type="audio/wav")
 
 
@@ -167,17 +168,17 @@ async def chat(req: ChatRequest):
     history = await get_messages(req.session_id, limit=20)
 
     # Optional RAG context retrieval
-    system_prompt = None
+    system_prompt = SYSTEM_PROMPT
     if req.with_rag:
         relevant_chunks = await search_relevant_chunks(req.text)
         if relevant_chunks:
             context_str = "\n\n".join([f"[{c['title']}]: {c['text']}" for c in relevant_chunks])
-            system_prompt = f"Use the following knowledge context to answer:\n{context_str}"
+            system_prompt = f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
 
     if req.stream:
         async def event_generator():
             full_response = ""
-            async for token in stream_chat_completion(history, system_prompt=system_prompt or "You are a friendly voice AI companion."):
+            async for token in stream_chat_completion(history, system_prompt=system_prompt):
                 full_response += token
                 yield f"data: {json.dumps({'token': token})}\n\n"
             # Save assistant response at the end
@@ -187,7 +188,7 @@ async def chat(req: ChatRequest):
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     # Non-streamed response
-    assistant_text = await generate_chat_completion(history, system_prompt=system_prompt or "You are a friendly voice AI companion.")
+    assistant_text = await generate_chat_completion(history, system_prompt=system_prompt)
     assistant_msg = await add_message(session_id=req.session_id, role="assistant", text=assistant_text)
 
     return {
@@ -242,7 +243,7 @@ async def websocket_chat(websocket: WebSocket):
                 full_reply = ""
                 sentence_buffer = ""
 
-                async for token in stream_chat_completion(history):
+                async for token in stream_chat_completion(history, system_prompt=SYSTEM_PROMPT):
                     full_reply += token
                     sentence_buffer += token
                     await websocket.send_json({"type": "token", "token": token})
@@ -252,34 +253,37 @@ async def websocket_chat(websocket: WebSocket):
                     if len(sentences) > 1:
                         complete_sentence = sentences[0]
                         sentence_buffer = " ".join(sentences[1:])
-                        # Synthesize sentence audio
+                        clean_sentence = sanitize_for_tts(complete_sentence)
+                        if clean_sentence:
+                            try:
+                                wav_data = text_to_wav_bytes(clean_sentence)
+                                if wav_data:
+                                    import base64
+                                    audio_b64 = base64.b64encode(wav_data).decode("utf-8")
+                                    await websocket.send_json({
+                                        "type": "audio_sentence",
+                                        "sentence": clean_sentence,
+                                        "audio": audio_b64,
+                                    })
+                            except Exception as e:
+                                print(f"Error in TTS sentence synthesis: {e}")
+
+                # Synthesize any remaining sentence buffer
+                if sentence_buffer.strip():
+                    clean_sentence = sanitize_for_tts(sentence_buffer.strip())
+                    if clean_sentence:
                         try:
-                            wav_data = text_to_wav_bytes(complete_sentence)
+                            wav_data = text_to_wav_bytes(clean_sentence)
                             if wav_data:
                                 import base64
                                 audio_b64 = base64.b64encode(wav_data).decode("utf-8")
                                 await websocket.send_json({
                                     "type": "audio_sentence",
-                                    "sentence": complete_sentence,
+                                    "sentence": clean_sentence,
                                     "audio": audio_b64,
                                 })
                         except Exception as e:
-                            print(f"Error in TTS sentence synthesis: {e}")
-
-                # Synthesize any remaining sentence buffer
-                if sentence_buffer.strip():
-                    try:
-                        wav_data = text_to_wav_bytes(sentence_buffer.strip())
-                        if wav_data:
-                            import base64
-                            audio_b64 = base64.b64encode(wav_data).decode("utf-8")
-                            await websocket.send_json({
-                                "type": "audio_sentence",
-                                "sentence": sentence_buffer.strip(),
-                                "audio": audio_b64,
-                            })
-                    except Exception as e:
-                        print(f"Error in TTS final synthesis: {e}")
+                            print(f"Error in TTS final synthesis: {e}")
 
                 # Save assistant message
                 await add_message(session_id=session_id, role="assistant", text=full_reply)
