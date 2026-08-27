@@ -57,11 +57,31 @@ bun run docker:up
 ```
 
 ### 2. Run the FastAPI Backend (Dev Mode with SSL)
-The backend requires a secure context (SSL) for browser Web Audio and microphone access.
+The backend requires a secure context (SSL) for browser Web Audio and microphone access. You can start the server in development mode using:
 ```bash
+bun run backend
+# Or:
 bun run backend:dev
 ```
-*Runs Uvicorn on `https://localhost:8000` with hot-reload enabled, using the repository's `cert.pem` and `key.pem` certificates.*
+*Runs the FastAPI server on `https://localhost:8000` with hot-reload enabled, using the repository's `cert.pem` and `key.pem` certificates.*
+
+#### Optional Command-Line Flags
+You can configure the target LLM engine and model directly when running `bun run backend` by using the `--` pass-through operator:
+
+*   **Target LM Studio** (Default):
+    ```bash
+    bun run backend -- --engine lmstudio --model google/gemma-3-4b-it-qat
+    ```
+*   **Target Ollama**:
+    ```bash
+    bun run backend -- --engine ollama --model llama3
+    ```
+*   **Target OpenAI / OpenRouter**:
+    ```bash
+    bun run backend -- --engine openrouter --api-key <YOUR_KEY> --model meta-llama/llama-3.3-70b-instruct
+    ```
+
+Available options include: `--engine` (`lmstudio`, `ollama`, `openai`, `openrouter`), `--model`, `--api-key`, `--base-url`, and `--mongo-uri`.
 
 ### 3. Run the Angular Frontend (Dev Mode with SSL)
 ```bash
