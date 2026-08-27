@@ -6,7 +6,7 @@
     "start": "bunx nx serve frontend",
     "build": "bunx nx build frontend",
     "backend": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py",
-    "backend:dev": "PYTHONPATH=. uv run --project apps/backend uvicorn apps.backend.server:app --reload --port 8000 --ssl-certfile cert.pem --ssl-keyfile key.pem",
+    "backend:dev": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py --reload",
     "docker:up": "docker compose up -d mongodb",
     "docker:down": "docker compose down"
   },

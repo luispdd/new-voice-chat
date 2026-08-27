@@ -9,6 +9,11 @@ class Settings(BaseModel):
     # Server settings
     host: str = Field(default="0.0.0.0", description="Bind host")
     port: int = Field(default=8000, description="Server port")
+    reload: bool = Field(default=False, description="Enable auto-reload on code changes")
+    reload_dirs: list[str] = Field(
+        default=["apps/backend"],
+        description="Directories to monitor for auto-reload",
+    )
     ssl_cert: str = Field(default="cert.pem", description="Path to SSL cert")
     ssl_key: str = Field(default="key.pem", description="Path to SSL private key")
     cors_origins: list[str] = Field(
@@ -70,6 +75,12 @@ def get_settings() -> Settings:
     parser.add_argument("--host", type=str, default=os.getenv("HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
     parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=os.getenv("RELOAD", "false").lower() in ("true", "1", "yes"),
+        help="Enable auto-reload on code changes (scoped to apps/backend)",
+    )
+    parser.add_argument(
         "--engine",
         type=str,
         default=os.getenv("LLM_ENGINE", "lmstudio"),
@@ -111,6 +122,7 @@ def get_settings() -> Settings:
     return Settings(
         host=args.host,
         port=args.port,
+        reload=args.reload,
         engine=engine,
         llm_base_url=base_url,
         llm_api_key=api_key,
