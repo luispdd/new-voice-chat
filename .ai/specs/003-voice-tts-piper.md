@@ -16,7 +16,7 @@ Converts assistant text responses into natural, low-latency spoken audio using P
    - Synthesize the complete sentence into 22050Hz 16-bit mono WAV bytes.
    - Transmit sentence audio chunks immediately over WebSocket `/ws/chat` as base64-encoded payloads (`audio_sentence`).
 3. **Frontend Queue Player**:
-   - `AudioPlaybackService` decodes incoming audio chunks using Web Audio `AudioContext`.
+   - Audio playback queue decodes incoming audio chunks using Web Audio `AudioContext`.
    - Queues and plays audio segments seamlessly in sequence without clicks, pops, or noticeable delays.
    - Supports user interrupt / stop playback action.
    - A 'Muted' icon in the toolbar turns on and off the audio output.   

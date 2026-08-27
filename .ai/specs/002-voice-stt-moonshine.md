@@ -1,35 +1,41 @@
-# Spec 002: Speech-to-Text (STT) with Moonshine ONNX & VAD
+# Spec 002: Speech-to-Text (STT) with Moonshine ONNX & AudioWorklet VAD
 
 ## Status: Implemented & Verified
 
 ## Overview
-Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) and Moonshine ONNX (`useful-moonshine-onnx`) in the backend.
+Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) via modern `AudioWorkletNode` and backend Moonshine ONNX (`moonshine/base`) with persistent model session caching and dynamic silence trimming.
 
 ## Requirements
-1. **Frontend Voice Activity Detection (VAD)**:
-   - A button with an icon with the shape of a microphone activates and deactivates the VAD system.
-   - When activated, it monitors microphone stream with `AnalyserNode`.
-   - Computes RMS volume and detects vocal activity threshold (`silenceThreshold = 0.018`).
-   - Automatically stops recording and emits a WAV chunk after `silenceDurationMs = 1500ms` of silence.
-   - **Sample Rate Handling**: Captures the actual hardware-determined `sampleRate` of the instantiated browser `AudioContext` dynamically. When exporting the WAV file, declares the true `sampleRate` in the WAV header rather than hardcoding `16000`, preventing speed/pitch distortions on the backend.
-2. **Audio Normalization**:
-   - Resamples multi-channel or variable sample rate audio into 16kHz mono `float32` array (`audio_bytes_to_float32`).
-   - **Resampling Conversion**: High-precision conversion must clip inputs to `[-1.0, 1.0]`, scale to 16-bit signed integer PCM, perform resampling via `AudioSegment(..., sample_width=2)` from `pydub`, and convert back to normalized `float32` by dividing by `32768.0`. Direct resampling on raw float32 bytes must be avoided to prevent signal scrambling.
-3. **Transcription Inference & Audio Chunking**:
-   - Backend service `apps/backend/services/stt.py` calls `moonshine_onnx.transcribe(audio_data, model="moonshine/tiny")`.
-   - **Long Sentence Audio Chunking**: Direct ONNX inference of Moonshine has a shape/attention sequence constraint (returns `''` on inputs longer than ~9-10 seconds). The backend must segment incoming audio into chunks of at most `8.0` seconds:
-     - Search window splits must occur at local silence points (100ms window with the lowest absolute energy) to prevent splitting middle of words.
-     - Transcribe each chunk independently and join the decoded text blocks with a space.
-   - **Duration Guard & Diagnostics**: Truncate segments longer than `60` seconds to fit model limits. Log diagnostic details (original format, sample rate, channels, duration, peak amplitude, and RMS value) for debugging.
-   - Returns sanitized transcription string.
-4. **Warmup**:
-   - Pre-warms the tokenizer and model during server startup via `get_stt_model()`.
-5. **Detect backend response**:
-   - The UI should display a loading indicator while the LLM is generating the response.
-   - In case of error or empty response, it must display an error message in red. The loading indicator must be removed and the VAD system must be reactivated.
-   - If the response is received the loading indicator must be removed and the VAD system must be reactivated.
+
+1. **Frontend Voice Activity Detection (VAD) & AudioWorklet**:
+   - Uses modern W3C `AudioWorkletNode` (`AudioWorkletProcessor`) for glitch-free, off-main-thread audio frame capture. `ScriptProcessorNode` / `createScriptProcessor` is deprecated and strictly forbidden.
+   - When activated, monitors microphone stream with `AnalyserNode` using explicit `ArrayBuffer` typing (`Uint8Array<ArrayBuffer>`).
+   - Computes RMS volume against the vocal activity threshold (`silenceThreshold = 0.018`).
+   - **Rolling Pre-Roll Buffer**: Keeps a rolling pre-roll buffer (~380ms) while waiting for speech to begin. Audio accumulation begins only when speech is detected (`rms > silenceThreshold`), prepending the pre-roll to preserve initial consonants without accumulating unbounded leading silence.
+   - Automatically stops recording and emits a 16-bit PCM WAV blob after `silenceDurationMs = 1500ms` of silence.
+   - **Sample Rate Handling**: Captures the actual hardware-determined `sampleRate` of the instantiated browser `AudioContext` dynamically and writes it into the WAV header.
+
+2. **Backend Audio Ingestion & Normalization**:
+   - Decodes audio payloads (WAV, WebM, MP3, etc.) using `pydub.AudioSegment.from_file(io.BytesIO(audio_bytes))` with `soundfile` fallback.
+   - Standardizes to 16,000 Hz, mono (1 channel), 16-bit PCM converted to normalized `float32` array (`np.array(samples, dtype=np.float32) / 32768.0`).
+   - Removes DC offset bias: `audio_np = audio_np - np.mean(audio_np)`.
+
+3. **Persistent Model Singleton & Lifespan Warmup**:
+   - Model Variant: Defaults to **`moonshine/base`** (`MoonshineOnnxModel(model_name="base")`) for reliable transcription accuracy.
+   - Initializes and warms up the STT model singleton once during server lifespan startup. Reconstructive per-request ONNX session reloading is strictly avoided.
+
+4. **Dynamic Silence Trimming & Single-Pass Inference**:
+   - **Dynamic Silence Trimming**: Executes dynamic silence trimming with adaptive RMS thresholding and 250ms pre/post margin before inference. Eliminates Moonshine decoder `EOS` (token `2`) early-termination caused by leading silence $\ge 2.0$s.
+   - **Single-Pass Inference**: Transcribes complete audio utterances directly in a single inference pass. Arbitrary mid-speech chunk slicing (e.g. at 8s) is forbidden as it breaks active phonemes and causes token dropouts.
+   - **Fallback Retry**: Performs peak-normalized retry (`(audio / peak) * 0.95`) if an audible utterance ($\text{RMS} > 0.01$) yields an empty decoded string.
+   - Limits single utterances to 60 seconds maximum.
+
+5. **UI & Response State Handling**:
+   - Displays a loading indicator while the LLM and STT process responses.
+   - If empty or erroneous audio is received, displays an informative message and automatically re-arms the VAD system.
 
 ## API Contracts
 - `POST /api/transcribe`:
   - Request: `multipart/form-data` with `audio` file payload (WAV / WebM).
-  - Response: `{ text: string }`
+  - Response: `{ "text": string }`
+

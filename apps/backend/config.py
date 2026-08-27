@@ -51,8 +51,8 @@ class Settings(BaseModel):
 
     # STT Settings
     stt_model_name: str = Field(
-        default="moonshine/tiny",
-        description="Moonshine ONNX model variant (moonshine/tiny or moonshine/base)",
+        default="moonshine/base",
+        description="Moonshine ONNX model variant (moonshine/base or moonshine/tiny)",
     )
 
     # TTS Settings
