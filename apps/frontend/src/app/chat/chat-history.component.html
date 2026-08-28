@@ -1,0 +1,47 @@
+<div class="chat-history-container" #scrollContainer>
+  <div *ngIf="messages().length === 0" class="empty-state">
+    <div class="empty-icon"><i class="pi pi-comments"></i></div>
+    <h3>Voice AI Companion</h3>
+    <p>Speak with the microphone or type below to start chatting.</p>
+  </div>
+
+  <div
+    *ngFor="let msg of messages()"
+    class="message-wrapper"
+    [ngClass]="msg.role === 'user' ? 'user-wrapper' : 'assistant-wrapper'"
+  >
+    <div class="avatar" [ngClass]="[msg.role, msg.is_error ? 'error' : '']">
+      <i class="pi" [ngClass]="msg.role === 'user' ? 'pi-user' : (msg.is_error ? 'pi-exclamation-triangle' : 'pi-sparkles')"></i>
+    </div>
+
+    <div class="bubble" [ngClass]="[msg.role, msg.is_error ? 'error' : '']">
+      <div class="content">{{ msg.text }}</div>
+      <div class="meta">
+        <span *ngIf="msg.timestamp" class="timestamp">{{ msg.timestamp | date:'shortTime' }}</span>
+        <button
+          *ngIf="msg.role === 'assistant' && !msg.is_error"
+          class="audio-btn"
+          (click)="onPlayAudio.emit(msg.text)"
+          title="Listen to response"
+        >
+          <i class="pi pi-volume-up"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Typing / Streaming / Loading Indicator -->
+  <div *ngIf="isStreaming()" class="message-wrapper assistant-wrapper">
+    <div class="avatar assistant">
+      <i class="pi pi-sparkles"></i>
+    </div>
+    <div class="bubble assistant" [ngClass]="{ streaming: streamingText(), loading: !streamingText() }">
+      <div *ngIf="streamingText()" class="content">{{ streamingText() }}<span class="cursor">▊</span></div>
+      <div *ngIf="!streamingText()" class="typing-indicator">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </div>
+</div>

@@ -6,8 +6,8 @@ import { ChatContainerComponent } from './chat/chat-container.component';
   selector: 'app-root',
   standalone: true,
   imports: [CommonModule, ChatContainerComponent],
-  template: `
-    <app-chat-container></app-chat-container>
-  `,
+  templateUrl: './app.component.html',
+  styleUrl: './app.component.scss',
 })
 export class AppComponent {}
+

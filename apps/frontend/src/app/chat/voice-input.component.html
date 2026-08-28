@@ -1,0 +1,35 @@
+<div class="voice-controls">
+  <button
+    class="mic-button"
+    [ngClass]="{
+      recording: isRecording(),
+      processing: isProcessing(),
+      disabled: disabled() || isProcessing()
+    }"
+    [disabled]="disabled() || isProcessing()"
+    (click)="onToggleMic.emit()"
+    [title]="
+      isProcessing()
+        ? 'Processing voice...'
+        : isRecording()
+        ? 'Click to stop recording'
+        : disabled()
+        ? 'Microphone unavailable while assistant is speaking'
+        : 'Click to talk (VAD active)'
+    "
+  >
+    <i
+      class="pi"
+      [ngClass]="
+        isProcessing()
+          ? 'pi-spin pi-spinner'
+          : isRecording()
+          ? 'pi-stop-circle'
+          : 'pi-microphone'
+      "
+    ></i>
+  </button>
+
+  <span *ngIf="isRecording()" class="recording-label">Listening...</span>
+  <span *ngIf="isProcessing()" class="recording-label">Processing voice...</span>
+</div>

@@ -1,0 +1,8 @@
+<div class="visualizer-container" [ngClass]="{ active: isActive(), speaking: isSpeaking() }">
+  <div class="glow-ring ring-1"></div>
+  <div class="glow-ring ring-2"></div>
+  <div class="glow-ring ring-3"></div>
+  <div class="orb">
+    <i class="pi" [ngClass]="isSpeaking() ? 'pi-volume-up' : (isActive() ? 'pi-microphone' : 'pi-sparkles')"></i>
+  </div>
+</div>
