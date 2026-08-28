@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -25,6 +25,8 @@ import { VoiceInputComponent } from './voice-input.component';
   styleUrl: './chat-container.component.scss',
 })
 export class ChatContainerComponent implements OnInit, OnDestroy {
+  chatHistory = viewChild(ChatHistoryComponent);
+
   sessions = signal<Session[]>([]);
   currentSessionId = signal<string>('');
   currentSessionTitle = signal<string>('New Conversation');
@@ -134,6 +136,7 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     const msgs = await this.api.getMessages(sessionId);
     this.messages.set(msgs);
     this.isSidebarOpen.set(false);
+    this.chatHistory()?.scrollToBottom(true);
   }
 
   async deleteSession(sessionId: string, event: Event) {
@@ -164,6 +167,7 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
         timestamp: new Date().toISOString(),
       },
     ]);
+    this.chatHistory()?.scrollToBottom(true);
 
     // Send via WebSocket for streaming text & audio synthesis
     this.isStreaming.set(true);

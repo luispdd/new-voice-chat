@@ -1,4 +1,4 @@
-import { Component, input, output, ElementRef, ViewChild, AfterViewChecked } from '@angular/core';
+import { Component, input, output, ElementRef, viewChild, AfterViewChecked, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Message } from '../core/api.service';
 
@@ -15,15 +15,48 @@ export class ChatHistoryComponent implements AfterViewChecked {
   streamingText = input<string>('');
   onPlayAudio = output<string>();
 
-  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
+  scrollContainer = viewChild<ElementRef<HTMLDivElement>>('scrollContainer');
 
-  ngAfterViewChecked() {
-    this.scrollToBottom();
+  shouldAutoScroll = true;
+
+  constructor() {
+    effect(() => {
+      const msgs = this.messages();
+      if (msgs.length > 0) {
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg.role === 'user') {
+          this.shouldAutoScroll = true;
+        }
+      } else {
+        this.shouldAutoScroll = true;
+      }
+    });
   }
 
-  private scrollToBottom(): void {
-    try {
-      this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
-    } catch (err) {}
+  ngAfterViewChecked() {
+    if (this.shouldAutoScroll) {
+      this.scrollToBottom();
+    }
+  }
+
+  onScroll(): void {
+    const container = this.scrollContainer()?.nativeElement;
+    if (!container) return;
+    const threshold = 60;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    this.shouldAutoScroll = distanceToBottom <= threshold;
+  }
+
+  scrollToBottom(force = false): void {
+    const container = this.scrollContainer()?.nativeElement;
+    if (!container) return;
+    if (force) {
+      this.shouldAutoScroll = true;
+    }
+    if (this.shouldAutoScroll) {
+      try {
+        container.scrollTop = container.scrollHeight;
+      } catch (err) {}
+    }
   }
 }

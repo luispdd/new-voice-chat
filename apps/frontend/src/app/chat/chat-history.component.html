@@ -1,4 +1,4 @@
-<div class="chat-history-container" #scrollContainer>
+<div class="chat-history-container" #scrollContainer (scroll)="onScroll()">
   <div *ngIf="messages().length === 0" class="empty-state">
     <div class="empty-icon"><i class="pi pi-comments"></i></div>
     <h3>Voice AI Companion</h3>
