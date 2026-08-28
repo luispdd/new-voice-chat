@@ -71,16 +71,23 @@
         </button>
         <div class="session-info">
           <h1>{{ currentSessionTitle() }}</h1>
-          <span class="sub-status">{{ isConnected() ? 'Connected' : 'Connecting...' }}</span>
+          <span class="sub-status" [class.disconnected]="!isConnected()">
+            {{ connectionStatus() }}
+          </span>
         </div>
       </div>
 
       <div class="header-right">
-        <app-visualizer
-          [isActive]="isRecording()"
-          [isSpeaking]="isSpeaking()"
-          [level]="audioLevel()"
-        ></app-visualizer>
+        <button
+          class="mute-toggle-btn"
+          [class.muted]="isMuted()"
+          (click)="toggleMute()"
+          [title]="isMuted() ? 'Turn on voice narration' : 'Mute voice narration'"
+          [attr.aria-label]="isMuted() ? 'Turn on voice narration' : 'Mute voice narration'"
+        >
+          <i class="pi" [ngClass]="isMuted() ? 'pi-volume-off' : 'pi-volume-up'"></i>
+          <span class="mute-btn-label">{{ isMuted() ? 'Muted' : 'Voice On' }}</span>
+        </button>
       </div>
     </header>
 

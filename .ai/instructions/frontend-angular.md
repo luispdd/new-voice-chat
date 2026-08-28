@@ -7,7 +7,7 @@
 - **Styling**: SCSS with custom design system tokens, dark glassmorphism, TailwindCSS utility classes and responsive layouts.
 - **Root Directory**: `apps/frontend/`
 - **Avoid using NgZone**: The frontend must be completely zoneless.
-- **Use Angular Signals**: The frontend must use Angular Signals for state management.
+- **Use Angular Signals**: The frontend must use Angular Signals for state management. Prefer using Signals over RxJS Observable for non complex use cases.
 - **Modern Angular Control Flow**: Avoid using legacy structural directives like `*ngIf` and `*ngFor`. Always use Angular's built-in `@if`, `@else`, and `@for (... of ...; track ...)` control flow blocks.
 - **Use Signal based input and output in components**: Always use signal-based `input()` and `output()` instead of legacy `@Input` and `@Output` decorators.
 - **Create independent files for templates, SCSS and test files**: Do not add all content inline in the component class file. Make sure the component generator is configured to create separated template and style files.

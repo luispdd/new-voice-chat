@@ -15,11 +15,20 @@ Converts assistant text responses into natural, low-latency spoken audio using P
    - As LLM text tokens stream in, buffer them until a sentence boundary (`[.!?\n]`) is reached.
    - Synthesize the complete sentence into 22050Hz 16-bit mono WAV bytes.
    - Transmit sentence audio chunks immediately over WebSocket `/ws/chat` as base64-encoded payloads (`audio_sentence`).
-3. **Frontend Queue Player**:
+3. **Frontend Queue Player & Narration Control**:
    - Audio playback queue decodes incoming audio chunks using Web Audio `AudioContext`.
    - Queues and plays audio segments seamlessly in sequence without clicks, pops, or noticeable delays.
    - Supports user interrupt / stop playback action.
-   - A 'Muted' icon in the toolbar turns on and off the audio output.   
+   - **Toolbar Narration / Mute Toggle**:
+     - The chat toolbar header provides a prominent, reactive toggle button indicating whether assistant voice narration is active or muted.
+     - **Visual Design & States**:
+       - Appears large and noticeable in the right part of the top toolbar header.
+       - **Active / Unmuted State**: Displays speaker icon with accent indicating narration is enabled.
+       - **Muted State**: Clearly displayed in distinct red styling mutted icon indicating speech output is actively silenced.
+     - When muted, speech synthesis audio output is disabled, active playback is immediately silenced, the playback queue is cleared, and incoming `audio_sentence` chunks are dropped.
+     - When unmuted, incoming speech chunks are decoded and queued normally.
+     - Toggling mute works seamlessly mid-conversation without interrupting text streaming or the WebSocket connection.
+   - Master mute state is managed reactively and it can be accessed globally in the application.
 
 ## API Contracts
 - `POST /api/tts`:
