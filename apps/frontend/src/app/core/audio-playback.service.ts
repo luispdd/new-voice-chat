@@ -1,18 +1,31 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AudioPlaybackService {
   private audioContext: AudioContext | null = null;
-  private isPlaying$ = new BehaviorSubject<boolean>(false);
   private queue: AudioBuffer[] = [];
   private isProcessingQueue = false;
   private currentSource: AudioBufferSourceNode | null = null;
 
-  get isPlaying(): Observable<boolean> {
-    return this.isPlaying$.asObservable();
+  private _isPlaying = signal<boolean>(false);
+  readonly isPlaying = this._isPlaying.asReadonly();
+
+  private _isMuted = signal<boolean>(false);
+  readonly isMuted = this._isMuted.asReadonly();
+
+  setMuted(muted: boolean): void {
+    this._isMuted.set(muted);
+    if (muted) {
+      this.stopPlayback();
+    }
+  }
+
+  toggleMute(): boolean {
+    const nextState = !this._isMuted();
+    this.setMuted(nextState);
+    return nextState;
   }
 
   private initAudioContext(): AudioContext {
@@ -26,11 +39,17 @@ export class AudioPlaybackService {
   }
 
   async enqueueWavBlob(blob: Blob): Promise<void> {
+    if (this._isMuted()) {
+      return;
+    }
     const arrayBuffer = await blob.arrayBuffer();
     await this.enqueueArrayBuffer(arrayBuffer);
   }
 
   async enqueueBase64Wav(b64Data: string): Promise<void> {
+    if (this._isMuted()) {
+      return;
+    }
     const binary = atob(b64Data);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
@@ -40,9 +59,15 @@ export class AudioPlaybackService {
   }
 
   private async enqueueArrayBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
+    if (this._isMuted()) {
+      return;
+    }
     const ctx = this.initAudioContext();
     try {
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      if (this._isMuted()) {
+        return;
+      }
       this.queue.push(audioBuffer);
       if (!this.isProcessingQueue) {
         this.processQueue();
@@ -53,14 +78,14 @@ export class AudioPlaybackService {
   }
 
   private processQueue(): void {
-    if (this.queue.length === 0) {
+    if (this._isMuted() || this.queue.length === 0) {
       this.isProcessingQueue = false;
-      this.isPlaying$.next(false);
+      this._isPlaying.set(false);
       return;
     }
 
     this.isProcessingQueue = true;
-    this.isPlaying$.next(true);
+    this._isPlaying.set(true);
 
     const buffer = this.queue.shift()!;
     const ctx = this.initAudioContext();
@@ -86,6 +111,6 @@ export class AudioPlaybackService {
       this.currentSource = null;
     }
     this.isProcessingQueue = false;
-    this.isPlaying$.next(false);
+    this._isPlaying.set(false);
   }
 }

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, viewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -7,9 +7,11 @@ import { ApiService, Message, Session } from '../core/api.service';
 import { AudioRecordService } from '../core/audio-record.service';
 import { AudioPlaybackService } from '../core/audio-playback.service';
 
-import { VisualizerComponent } from './visualizer.component';
 import { ChatHistoryComponent } from './chat-history.component';
 import { VoiceInputComponent } from './voice-input.component';
+
+export const STATUS_CONNECTED = 'Connected';
+export const STATUS_DISCONNECTED = 'Disconnected';
 
 @Component({
   selector: 'app-chat-container',
@@ -17,7 +19,6 @@ import { VoiceInputComponent } from './voice-input.component';
   imports: [
     CommonModule,
     FormsModule,
-    VisualizerComponent,
     ChatHistoryComponent,
     VoiceInputComponent,
   ],
@@ -25,7 +26,14 @@ import { VoiceInputComponent } from './voice-input.component';
   styleUrl: './chat-container.component.scss',
 })
 export class ChatContainerComponent implements OnInit, OnDestroy {
+  readonly STATUS_CONNECTED = STATUS_CONNECTED;
+  readonly STATUS_DISCONNECTED = STATUS_DISCONNECTED;
+
   chatHistory = viewChild(ChatHistoryComponent);
+
+  private api = inject(ApiService);
+  private audioRecord = inject(AudioRecordService);
+  private audioPlayback = inject(AudioPlaybackService);
 
   sessions = signal<Session[]>([]);
   currentSessionId = signal<string>('');
@@ -37,22 +45,35 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   isSidebarOpen = signal<boolean>(false);
   isConnected = signal<boolean>(false);
+  readonly connectionStatus = computed(() =>
+    this.isConnected() ? STATUS_CONNECTED : STATUS_DISCONNECTED
+  );
   isStreaming = signal<boolean>(false);
   streamingText = signal<string>('');
   isRecording = signal<boolean>(false);
   isProcessingVoice = signal<boolean>(false);
-  isSpeaking = signal<boolean>(false);
   isVadActive = signal<boolean>(false);
-  audioLevel = signal<number>(0);
   healthInfo = signal<any>(null);
+
+  readonly isSpeaking = this.audioPlayback.isPlaying;
+  readonly isMuted = this.audioPlayback.isMuted;
 
   private subs = new Subscription();
 
-  constructor(
-    private api: ApiService,
-    private audioRecord: AudioRecordService,
-    private audioPlayback: AudioPlaybackService,
-  ) {}
+  constructor() {
+    effect(() => {
+      const playing = this.audioPlayback.isPlaying();
+      if (playing && this.isRecording()) {
+        this.audioRecord.stopRecording();
+      } else if (!playing && !this.isStreaming() && !this.isProcessingVoice()) {
+        this.restartVadIfActive();
+      }
+    });
+  }
+
+  toggleMute(): void {
+    this.audioPlayback.toggleMute();
+  }
 
   async ngOnInit() {
     try {
@@ -65,13 +86,6 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
     await this.loadSessions();
 
-    // Listen to audio levels
-    this.subs.add(
-      this.audioRecord.audioLevel.subscribe((level) => {
-        this.audioLevel.set(level);
-      })
-    );
-
     // Sync recording state
     this.subs.add(
       this.audioRecord.isRecording.subscribe((isRecording) => {
@@ -83,18 +97,6 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     this.subs.add(
       this.audioRecord.onAudioChunkReady.subscribe(async (wavBlob) => {
         await this.handleAudioChunk(wavBlob);
-      })
-    );
-
-    // Listen to playback state & auto-reactivate VAD upon completion
-    this.subs.add(
-      this.audioPlayback.isPlaying.subscribe(async (playing) => {
-        this.isSpeaking.set(playing);
-        if (playing && this.isRecording()) {
-          this.audioRecord.stopRecording();
-        } else if (!playing && !this.isStreaming() && !this.isProcessingVoice()) {
-          await this.restartVadIfActive();
-        }
       })
     );
 

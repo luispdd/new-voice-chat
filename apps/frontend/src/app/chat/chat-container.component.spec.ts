@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
+import { signal } from '@angular/core';
+import { By } from '@angular/platform-browser';
 import { ChatContainerComponent } from './chat-container.component';
 import { ApiService } from '../core/api.service';
 import { AudioRecordService } from '../core/audio-record.service';
@@ -8,6 +10,9 @@ import { AudioPlaybackService } from '../core/audio-playback.service';
 describe('ChatContainerComponent', () => {
   let component: ChatContainerComponent;
   let fixture: ComponentFixture<ChatContainerComponent>;
+
+  const isPlayingSig = signal(false);
+  const isMutedSig = signal(false);
 
   const mockApiService = {
     getHealth: () => Promise.resolve({ engine: 'ollama', model: 'llama3' }),
@@ -29,8 +34,14 @@ describe('ChatContainerComponent', () => {
   };
 
   const mockAudioPlaybackService = {
-    isPlaying: of(false),
-    stopPlayback: () => {},
+    isPlaying: isPlayingSig.asReadonly(),
+    isMuted: isMutedSig.asReadonly(),
+    toggleMute: vi.fn(() => {
+      isMutedSig.set(!isMutedSig());
+      return isMutedSig();
+    }),
+    setMuted: vi.fn((muted: boolean) => isMutedSig.set(muted)),
+    stopPlayback: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -96,5 +107,25 @@ describe('ChatContainerComponent', () => {
     expect(component.sessions().length).toBe(1);
     expect(component.sessions()[0].session_id).toBe('s-2');
     expect(component.currentSessionId()).toBe('s-2');
+  });
+
+  it('should render toolbar mute toggle button and toggle mute on click', () => {
+    isMutedSig.set(false);
+    fixture.detectChanges();
+
+    const muteBtn = fixture.debugElement.query(By.css('.mute-toggle-btn'));
+    expect(muteBtn).toBeTruthy();
+    expect(muteBtn.nativeElement.classList.contains('muted')).toBe(false);
+
+    const icon = muteBtn.query(By.css('i'));
+    expect(icon.nativeElement.className).toContain('pi-volume-up');
+
+    muteBtn.nativeElement.click();
+    fixture.detectChanges();
+
+    expect(mockAudioPlaybackService.toggleMute).toHaveBeenCalled();
+    expect(component.isMuted()).toBe(true);
+    expect(muteBtn.nativeElement.classList.contains('muted')).toBe(true);
+    expect(icon.nativeElement.className).toContain('pi-volume-off');
   });
 });

@@ -230,6 +230,63 @@
     .sub-status {
       font-size: 0.75rem;
       color: #10b981;
+
+      &.disconnected {
+        color: var(--text-muted);
+      }
+    }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+
+    .mute-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.5rem 1rem;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent-cyan);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+      backdrop-filter: blur(8px);
+      transition: all 0.25s ease;
+
+      i {
+        font-size: 1.1rem;
+      }
+
+      &:hover {
+        background: rgba(56, 189, 248, 0.22);
+        border-color: var(--accent-cyan);
+        color: #fff;
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+
+      &.muted {
+        background: rgba(239, 68, 68, 0.18);
+        border: 1px solid #ef4444;
+        color: #ef4444;
+        box-shadow: 0 0 14px rgba(239, 68, 68, 0.3);
+
+        &:hover {
+          background: rgba(239, 68, 68, 0.28);
+          border-color: #f87171;
+          color: #fca5a5;
+          box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+          transform: translateY(-1px);
+        }
+      }
     }
   }
 }
