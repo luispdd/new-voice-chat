@@ -1,6 +1,6 @@
 # Task 012: Conversation Management (Create, Edit Name, Delete)
 
-- **Status**: Backlog
+- **Status**: Completed
 - **Target Component**: `apps/frontend/src/app/chat/chat-container.component.ts`, `apps/frontend/src/app/core/api.service.ts`, `apps/backend/server.py`, `apps/backend/services/db.py`
 - **Spec Reference**: [001-core-text-chat.md](../../specs/001-core-text-chat.md)
 

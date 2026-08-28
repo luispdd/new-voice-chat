@@ -30,6 +30,10 @@
     ></i>
   </button>
 
-  <span *ngIf="isRecording()" class="recording-label">Listening...</span>
-  <span *ngIf="isProcessing()" class="recording-label">Processing voice...</span>
+  @if (isRecording()) {
+    <span class="recording-label">Listening...</span>
+  }
+  @if (isProcessing()) {
+    <span class="recording-label">Processing voice...</span>
+  }
 </div>

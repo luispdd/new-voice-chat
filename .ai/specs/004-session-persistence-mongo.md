@@ -21,5 +21,6 @@ Stores user chat sessions, message histories, and document embeddings in MongoDB
 ## API Contracts
 - `GET /api/sessions`: Returns list of user sessions sorted by recent activity.
 - `POST /api/sessions`: Creates a new session `{ title?: string, user_id?: string }`.
+- `PATCH /api/sessions/{session_id}`: Updates session metadata, such as renaming `{ title: string }`.
 - `GET /api/sessions/{session_id}/messages`: Returns chronological message list for session.
 - `DELETE /api/sessions/{session_id}`: Cascading deletion of session and its messages.

@@ -36,6 +36,11 @@ Provides text-based conversation capabilities supporting real-time token streami
    - The last message should be always visible unless the user scroll to the previous messages.
 
 ## API Contracts
+- `GET /api/sessions`: List user sessions sorted by `last_active` descending.
+- `POST /api/sessions`: Create a new session `{ title?: string, user_id?: string }`.
+- `PATCH /api/sessions/{session_id}`: Update session metadata `{ title: string }`.
+- `DELETE /api/sessions/{session_id}`: Cascade deletion of session and its messages.
+- `GET /api/sessions/{session_id}/messages`: Fetch chronological messages for session.
 - `POST /api/chat`:
   - Request: `{ session_id: string, text: string, stream?: boolean, with_rag?: boolean }`
   - Response: `{ reply: string, message: Message }` or SSE stream of `{ token: string }`.

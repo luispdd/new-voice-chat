@@ -52,6 +52,16 @@ export class ApiService {
     return data.session;
   }
 
+  async updateSession(sessionId: string, title: string): Promise<Session> {
+    const res = await fetch(`${this.baseUrl}/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    const data = await res.json();
+    return data.session;
+  }
+
   async getMessages(sessionId: string): Promise<Message[]> {
     const res = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/messages`);
     const data = await res.json();

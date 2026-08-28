@@ -9,25 +9,55 @@
     </div>
 
     <div class="sessions-list">
-      <div
-        *ngFor="let s of sessions()"
-        class="session-item"
-        [ngClass]="{ active: s.session_id === currentSessionId() }"
-        (click)="selectSession(s.session_id)"
-      >
-        <i class="pi pi-comment"></i>
-        <span class="session-title">{{ s.title }}</span>
-        <button class="delete-btn" (click)="deleteSession(s.session_id, $event)" title="Delete">
-          <i class="pi pi-trash"></i>
-        </button>
-      </div>
+      @for (s of sessions(); track s.session_id) {
+        <div
+          class="session-item"
+          [ngClass]="{ active: s.session_id === currentSessionId(), editing: s.session_id === editingSessionId() }"
+          (click)="selectSession(s.session_id)"
+        >
+          <i class="pi pi-comment"></i>
+
+          @if (editingSessionId() === s.session_id) {
+            <input
+              #renameInput
+              type="text"
+              class="session-title-input"
+              [ngModel]="editingTitle()"
+              (ngModelChange)="editingTitle.set($event)"
+              (keydown.enter)="saveSessionTitle(s.session_id, $event)"
+              (keydown.escape)="cancelEditingSession($event)"
+              (blur)="saveSessionTitle(s.session_id, $event)"
+              (click)="$event.stopPropagation()"
+              autofocus
+            />
+            <button class="action-btn save-btn" (click)="saveSessionTitle(s.session_id, $event)" title="Save title">
+              <i class="pi pi-check"></i>
+            </button>
+            <button class="action-btn cancel-btn" (click)="cancelEditingSession($event)" title="Cancel">
+              <i class="pi pi-times"></i>
+            </button>
+          } @else {
+            <span class="session-title" (dblclick)="startEditingSession(s, $event)" [title]="s.title">{{ s.title }}</span>
+            <div class="session-actions">
+              <button class="action-btn edit-btn" (click)="startEditingSession(s, $event)" title="Rename">
+                <i class="pi pi-pencil"></i>
+              </button>
+              <button class="action-btn delete-btn" (click)="deleteSession(s.session_id, $event)" title="Delete">
+                <i class="pi pi-trash"></i>
+              </button>
+            </div>
+          }
+        </div>
+      }
     </div>
 
     <div class="sidebar-footer">
-      <div class="health-badge" *ngIf="healthInfo()">
-        <span class="status-dot"></span>
-        <span>{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
-      </div>
+      @if (healthInfo()) {
+        <div class="health-badge">
+          <span class="status-dot"></span>
+          <span>{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
+        </div>
+      }
     </div>
   </aside>
 
@@ -91,14 +121,15 @@
         </button>
       </div>
 
-      <button
-        *ngIf="isSpeaking()"
-        class="stop-audio-btn"
-        (click)="stopSpeechPlayback()"
-        title="Stop audio playback"
-      >
-        <i class="pi pi-volume-off"></i> Stop
-      </button>
+      @if (isSpeaking()) {
+        <button
+          class="stop-audio-btn"
+          (click)="stopSpeechPlayback()"
+          title="Stop audio playback"
+        >
+          <i class="pi pi-volume-off"></i> Stop
+        </button>
+      }
     </footer>
   </main>
 </div>
