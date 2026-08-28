@@ -15,6 +15,7 @@ from apps.backend.db.mongo import (
     create_session,
     get_sessions,
     get_session,
+    update_session,
     add_message,
     get_messages,
     delete_session,
@@ -70,6 +71,10 @@ class CreateSessionRequest(BaseModel):
     user_id: Optional[str] = "default_user"
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str
+
+
 class ChatRequest(BaseModel):
     session_id: str
     text: str
@@ -107,6 +112,14 @@ async def list_sessions(user_id: str = "default_user"):
 async def new_session(req: CreateSessionRequest):
     session = await create_session(title=req.title or "New Conversation", user_id=req.user_id or "default_user")
     return {"session": session}
+
+
+@app.patch("/api/sessions/{session_id}")
+async def modify_session(session_id: str, req: UpdateSessionRequest):
+    updated = await update_session(session_id, title=req.title)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session": updated}
 
 
 @app.get("/api/sessions/{session_id}/messages")

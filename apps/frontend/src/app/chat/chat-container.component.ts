@@ -30,6 +30,8 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   sessions = signal<Session[]>([]);
   currentSessionId = signal<string>('');
   currentSessionTitle = signal<string>('New Conversation');
+  editingSessionId = signal<string | null>(null);
+  editingTitle = signal<string>('');
   messages = signal<Message[]>([]);
   inputText = signal<string>('');
 
@@ -137,6 +139,45 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     this.messages.set(msgs);
     this.isSidebarOpen.set(false);
     this.chatHistory()?.scrollToBottom(true);
+  }
+
+  startEditingSession(session: Session, event?: Event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.editingSessionId.set(session.session_id);
+    this.editingTitle.set(session.title);
+  }
+
+  async saveSessionTitle(sessionId: string, event?: Event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    const newTitle = this.editingTitle().trim();
+    this.editingSessionId.set(null);
+
+    if (!newTitle) return;
+
+    // Optimistically update local session list and header
+    this.sessions.update((list) =>
+      list.map((s) => (s.session_id === sessionId ? { ...s, title: newTitle } : s))
+    );
+    if (this.currentSessionId() === sessionId) {
+      this.currentSessionTitle.set(newTitle);
+    }
+
+    try {
+      await this.api.updateSession(sessionId, newTitle);
+    } catch (e) {
+      console.error('Failed to update session title:', e);
+    }
+  }
+
+  cancelEditingSession(event?: Event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.editingSessionId.set(null);
   }
 
   async deleteSession(sessionId: string, event: Event) {

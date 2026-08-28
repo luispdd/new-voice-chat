@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 import uuid
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 from apps.backend.config import settings
 
 _client: Optional[AsyncIOMotorClient] = None
@@ -76,6 +77,15 @@ async def get_sessions(user_id: str = "default_user", limit: int = 50) -> list[d
 async def get_session(session_id: str) -> Optional[dict[str, Any]]:
     db = get_db()
     return await db.sessions.find_one({"session_id": session_id})
+
+
+async def update_session(session_id: str, title: str) -> Optional[dict[str, Any]]:
+    db = get_db()
+    return await db.sessions.find_one_and_update(
+        {"session_id": session_id},
+        {"$set": {"title": title}},
+        return_document=ReturnDocument.AFTER,
+    )
 
 
 async def add_message(
