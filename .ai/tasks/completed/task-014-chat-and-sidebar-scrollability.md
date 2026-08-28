@@ -1,6 +1,6 @@
 # Task 014: Chat Message Feed and Sidebar Scrollability & Auto-Scroll
 
-- **Status**: Backlog
+- **Status**: Completed
 - **Target Component**: `apps/frontend/src/app/chat/chat-history.component.ts`, `apps/frontend/src/app/chat/chat-container.component.ts`
 - **Spec Reference**: [001-core-text-chat.md](../../specs/001-core-text-chat.md)
 
