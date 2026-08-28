@@ -1,7 +1,19 @@
 """LLM service connecting to OpenAI-compatible APIs (LM Studio, Ollama, OpenRouter, OpenAI)."""
 
 from typing import AsyncGenerator
-from openai import AsyncOpenAI
+from openai import (
+    AsyncOpenAI,
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    NotFoundError,
+    RateLimitError,
+    PermissionDeniedError,
+    BadRequestError,
+    InternalServerError,
+    APIStatusError,
+    APIError,
+)
 from apps.backend.config import settings
 
 _client: AsyncOpenAI | None = None
@@ -15,6 +27,49 @@ You communicate via a voice interface, so your responses must be optimized for n
 - Avoid bulleted or numbered lists; express ideas naturally using spoken transitions.
 - Avoid code blocks, URLs, and complex technical syntax unless explicitly requested by the user.
 - Respond in plain, clear text that sounds natural when spoken aloud."""
+
+
+def format_llm_exception(
+    e: Exception,
+    engine: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Format LLM exceptions into concise, user-friendly error messages."""
+    eng = (engine or settings.engine).lower()
+
+    engine_display = {
+        "lmstudio": "LM Studio",
+        "ollama": "Ollama",
+        "openai": "OpenAI",
+        "openrouter": "OpenRouter",
+    }.get(eng, eng.upper())
+
+    if isinstance(e, APITimeoutError):
+        return f"[Error: Connection timed out for {engine_display}]"
+
+    if isinstance(e, APIConnectionError):
+        return f"[Error: Unable to connect to {engine_display}]"
+
+    if isinstance(e, AuthenticationError):
+        return f"[Error: Authentication failed for {engine_display}]"
+
+    if isinstance(e, PermissionDeniedError):
+        return f"[Error: Access denied for {engine_display}]"
+
+    if isinstance(e, NotFoundError):
+        return f"[Error: Model not found on {engine_display}]"
+
+    if isinstance(e, RateLimitError):
+        return f"[Error: Rate limit or quota exceeded for {engine_display}]"
+
+    if isinstance(e, InternalServerError):
+        return f"[Error: Server error from {engine_display}]"
+
+    if isinstance(e, (BadRequestError, APIStatusError, APIError)):
+        return f"[Error: Provider error from {engine_display}]"
+
+    return f"[Error: Unable to generate response from {engine_display}]"
 
 
 def get_llm_client() -> AsyncOpenAI:
@@ -58,8 +113,14 @@ async def stream_chat_completion(
                     yield delta.content
 
     except Exception as e:
-        print(f"❌ Error communicating with LLM ({settings.engine}): {e}")
-        yield f" [Error generating response: {str(e)}]"
+        error_msg = format_llm_exception(
+            e,
+            engine=settings.engine,
+            base_url=settings.llm_base_url,
+            model=target_model,
+        )
+        print(f"❌ Error communicating with LLM ({settings.engine}): {error_msg}")
+        yield error_msg
 
 
 async def generate_chat_completion(

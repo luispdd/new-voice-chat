@@ -21,7 +21,9 @@ Provides text-based conversation capabilities supporting real-time token streami
      - Markdown formatting like asterisks (`*`, `**`), underscores (`_`), hash headers (`#`), backticks (`` ` ``), bullet lists, or tables.
      - Unreadable unicode characters, decorative symbols, ASCII art, or code snippets unless requested.
    - Enforced consistently across REST `/api/chat` (including RAG context injection) and WebSocket `/ws/chat`.
-4. **Error Handling**: Graceful fallback when the LLM service is offline or unreachable.
+4. **Error Handling & Provider Diagnostics**:
+   - The backend must provide clean, user-friendly error messages indicating the service provider and the reason of the error when the LLM service is offline, unreachable, or encounters an issue.
+   - Error messages yielded during streaming or REST chat must start with `[Error: ...]` to enable automatic frontend error styling (`is_error: true`), and are sanitized and narrated aloud via TTS for clear voice companion feedback.
 5. **Conversation history**:
    - The user can create, rename and delete conversations.
    - The conversations should be displayed in the sidebar.

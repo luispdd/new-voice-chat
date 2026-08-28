@@ -5,6 +5,7 @@
   "scripts": {
     "start": "bunx nx serve frontend",
     "build": "bunx nx build frontend",
+    "test": "bunx nx test frontend",
     "backend": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py",
     "backend:dev": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py --reload",
     "docker:up": "docker compose up -d mongodb",
@@ -23,17 +24,21 @@
     "primeicons": "^7.0.0",
     "primeng": "^19.0.0",
     "rxjs": "^7.8.0",
-    "tslib": "^2.3.0",
-    "zone.js": "~0.15.0"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
+    "@analogjs/vite-plugin-angular": "^2.7.1",
     "@angular-devkit/build-angular": "^20.0.0",
     "@angular/cli": "^20.0.0",
     "@angular/compiler-cli": "^20.0.0",
     "@nx/angular": "^20.4.0",
     "@nx/js": "^20.4.0",
+    "@nx/vite": "^23.1.2",
     "@nx/workspace": "^20.4.0",
+    "jsdom": "^30.0.1",
     "nx": "^20.4.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }

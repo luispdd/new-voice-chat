@@ -10,6 +10,7 @@
 - **Use Angular Signals**: The frontend must use Angular Signals for state management.
 - **Use Signal based input and output in components**: Always use signal-based `input()` and `output()` instead of legacy `@Input` and `@Output` decorators.
 - **Create independent files for templates, SCSS and test files**: Do not add all content inline in the component class file. Make sure the component generator is configured to create separated template and style files.
+- **Unit Test Runner**: **Vitest** with `@analogjs/vite-plugin-angular` using global test APIs (`describe`, `it`, `expect`, `beforeEach`, etc.) configured via `tsconfig.spec.json` and `vite.config.mts`.
 
 ## Core Architectural Layers & Responsibilities
 - **API & Network Layer**: REST and WebSocket client handling session lifecycle, history retrieval, STT transcription ingestion, and bi-directional real-time chat streaming.
@@ -35,5 +36,10 @@ bunx nx serve frontend
 
 # Build frontend production bundle
 bunx nx build frontend
+
+# Run frontend unit tests with Vitest
+bun test
+# Or via NX
+bunx nx test frontend
 ```
 

@@ -1,0 +1,104 @@
+<div class="chat-app-layout">
+  <!-- Sidebar / Session Drawer -->
+  <aside class="sessions-sidebar" [ngClass]="{ open: isSidebarOpen() }">
+    <div class="sidebar-header">
+      <h2><i class="pi pi-bolt"></i> Voice Companion</h2>
+      <button class="icon-btn" (click)="createNewSession()" title="New Chat">
+        <i class="pi pi-plus"></i>
+      </button>
+    </div>
+
+    <div class="sessions-list">
+      <div
+        *ngFor="let s of sessions()"
+        class="session-item"
+        [ngClass]="{ active: s.session_id === currentSessionId() }"
+        (click)="selectSession(s.session_id)"
+      >
+        <i class="pi pi-comment"></i>
+        <span class="session-title">{{ s.title }}</span>
+        <button class="delete-btn" (click)="deleteSession(s.session_id, $event)" title="Delete">
+          <i class="pi pi-trash"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="health-badge" *ngIf="healthInfo()">
+        <span class="status-dot"></span>
+        <span>{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Chat Area -->
+  <main class="chat-main">
+    <!-- Top Toolbar -->
+    <header class="chat-header glass-panel">
+      <div class="header-left">
+        <button class="menu-btn" (click)="isSidebarOpen.set(!isSidebarOpen())">
+          <i class="pi pi-bars"></i>
+        </button>
+        <div class="session-info">
+          <h1>{{ currentSessionTitle() }}</h1>
+          <span class="sub-status">{{ isConnected() ? 'Connected' : 'Connecting...' }}</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <app-visualizer
+          [isActive]="isRecording()"
+          [isSpeaking]="isSpeaking()"
+          [level]="audioLevel()"
+        ></app-visualizer>
+      </div>
+    </header>
+
+    <!-- Message Stream -->
+    <section class="messages-viewport glass-panel">
+      <app-chat-history
+        [messages]="messages()"
+        [isStreaming]="isStreaming()"
+        [streamingText]="streamingText()"
+        (onPlayAudio)="playMessageSpeech($event)"
+      ></app-chat-history>
+    </section>
+
+    <!-- Input Bar -->
+    <footer class="chat-input-bar glass-panel">
+      <app-voice-input
+        [isRecording]="isRecording()"
+        [isProcessing]="isProcessingVoice()"
+        [disabled]="isSpeaking() || isStreaming()"
+        (onToggleMic)="toggleRecording()"
+      ></app-voice-input>
+
+      <div class="input-wrapper">
+        <input
+          type="text"
+          [ngModel]="inputText()"
+          (ngModelChange)="inputText.set($event)"
+          placeholder="Ask anything or speak into your microphone..."
+          (keydown.enter)="sendText()"
+          [disabled]="isStreaming() || isProcessingVoice()"
+        />
+        <button
+          class="send-btn"
+          [disabled]="!inputText().trim() || isStreaming() || isProcessingVoice()"
+          (click)="sendText()"
+        >
+          <i class="pi pi-send"></i>
+        </button>
+      </div>
+
+      <button
+        *ngIf="isSpeaking()"
+        class="stop-audio-btn"
+        (click)="stopSpeechPlayback()"
+        title="Stop audio playback"
+      >
+        <i class="pi pi-volume-off"></i> Stop
+      </button>
+    </footer>
+  </main>
+</div>

@@ -18,5 +18,13 @@
       "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
       "!{projectRoot}/tsconfig.spec.json"
     ]
+  },
+  "generators": {
+    "@nx/angular:component": {
+      "style": "scss",
+      "inlineTemplate": false,
+      "inlineStyle": false,
+      "skipTests": false
+    }
   }
 }
