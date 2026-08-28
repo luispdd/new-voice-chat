@@ -33,6 +33,12 @@ The system consists of audio pipelines, streaming WebSockets, local ONNX neural 
   ```
 
 ### 3. Frontend & Build Layer
+- **Frontend Unit Tests (Vitest)**:
+  ```bash
+  bun test
+  # Or via NX
+  bunx nx test frontend
+  ```
 - **TypeScript & Angular Compilation**:
   ```bash
   bunx nx build frontend

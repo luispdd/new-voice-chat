@@ -12,7 +12,7 @@
         "outputPath": "dist/apps/frontend",
         "index": "apps/frontend/src/index.html",
         "browser": "apps/frontend/src/main.ts",
-        "polyfills": ["zone.js"],
+        "polyfills": [],
         "tsConfig": "apps/frontend/tsconfig.app.json",
         "inlineStyleLanguage": "scss",
         "assets": [
@@ -66,6 +66,13 @@
         "ssl": true,
         "sslCert": "cert.pem",
         "sslKey": "key.pem"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/frontend",
+        "command": "vitest run"
       }
     }
   }

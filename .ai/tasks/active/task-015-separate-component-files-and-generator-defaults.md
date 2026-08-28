@@ -1,6 +1,6 @@
 # Task 015: Separate Component Templates/Styles/Tests & Configure Generator Defaults
 
-- **Status**: Backlog
+- **Status**: Completed
 - **Target Component**: `apps/frontend/src/app/`, `nx.json`, `apps/frontend/project.json`
 - **Instruction Reference**: [frontend-angular.md](../../instructions/frontend-angular.md)
 

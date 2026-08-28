@@ -28,7 +28,7 @@ describe('ChatContainerComponent', () => {
 
   const mockAudioPlaybackService = {
     isPlaying: of(false),
-    stopAll: () => {},
+    stopPlayback: () => {},
   };
 
   beforeEach(async () => {
