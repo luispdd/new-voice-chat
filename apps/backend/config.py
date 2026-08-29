@@ -55,8 +55,8 @@ class Settings(BaseModel):
 
     # STT Settings
     stt_model_name: str = Field(
-        default="moonshine/base",
-        description="Moonshine ONNX model variant (moonshine/base or moonshine/tiny)",
+        default=os.getenv("STT_MODEL_NAME", "medium-streaming"),
+        description="Moonshine STT model variant: medium-streaming, small-streaming, base-streaming, tiny-streaming, base, tiny",
     )
 
     # TTS Settings
@@ -95,6 +95,12 @@ def get_settings() -> Settings:
     parser.add_argument("--api-key", type=str, default=os.getenv("LLM_API_KEY", None))
     parser.add_argument("--mongo-uri", type=str, default=os.getenv("MONGO_URI", None))
     parser.add_argument(
+        "--stt-model",
+        type=str,
+        default=os.getenv("STT_MODEL_NAME", "medium-streaming"),
+        help="Moonshine STT model variant: medium-streaming, small-streaming, base-streaming, tiny-streaming, base, tiny",
+    )
+    parser.add_argument(
         "--history-limit",
         type=int,
         default=int(os.getenv("LLM_HISTORY_LIMIT", "50")),
@@ -128,6 +134,7 @@ def get_settings() -> Settings:
 
     api_key = args.api_key or os.getenv("LLM_API_KEY", "not-needed")
     mongo_uri = args.mongo_uri or os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", "medium-streaming")
 
     return Settings(
         host=args.host,
@@ -139,6 +146,7 @@ def get_settings() -> Settings:
         llm_model=model,
         llm_history_limit=args.history_limit,
         mongo_uri=mongo_uri,
+        stt_model_name=stt_model_name,
     )
 
 
