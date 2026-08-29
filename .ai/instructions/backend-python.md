@@ -10,14 +10,14 @@
 - **Pydantic**: Request and response schema validation.
 - **Motor / PyMongo**: Async driver for MongoDB database operations.
 - **OpenAI Python SDK**: Client for OpenAI-compatible endpoints (LM Studio, Ollama, OpenRouter, OpenAI).
-- **Moonshine ONNX (`useful-moonshine-onnx`)**: Fast local Speech-to-Text inference.
+- **Moonshine Voice (`moonshine-voice`)**: Fast local Speech-to-Text inference supporting streaming and base architectures (`medium-streaming`, `small-streaming`, `base-streaming`, `tiny-streaming`, `base`, `tiny`).
 - **Piper TTS (`piper-tts`) & ONNX Runtime**: Local neural voice synthesis with sentence streaming.
 - **Audio Preprocessing**: `soundfile`, `pydub`, `numpy`, and `audioop-lts` (required for Python 3.13 compatibility).
 
 ## Key Patterns
 1. **Piper Model Manager**: Download voice models via `hf_hub_download` from `rhasspy/piper-voices` with optimized ONNX thread sessions (`intra_op_num_threads=2`, `inter_op_num_threads=2`).
 2. **STT Service Architecture**:
-   - Always initialize and warm up `MoonshineOnnxModel(model_name="base")` singleton once in lifespan startup to avoid per-request ONNX session reloading.
+   - Always initialize and warm up `Transcriber` singleton (default `medium-streaming` / `MEDIUM_STREAMING`) once in lifespan startup to avoid per-request model reloading.
    - Decode raw audio payloads via `pydub.AudioSegment.from_file` normalized to 16kHz mono `float32` arrays in `[-1.0, 1.0]` with DC offset removal.
    - Always run `trim_silence()` before Moonshine inference to strip leading/trailing silence with 250ms padding. Moonshine decoder early-terminates with `EOS` (empty string) if audio begins with $\ge 2$s of silence.
    - Pass the full utterance directly to Moonshine without artificial mid-speech 8s slicing.

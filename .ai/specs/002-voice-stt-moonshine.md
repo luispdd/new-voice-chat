@@ -3,7 +3,7 @@
 ## Status: Implemented & Verified
 
 ## Overview
-Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) via modern `AudioWorkletNode` and backend Moonshine ONNX (`moonshine/base`) with persistent model session caching and dynamic silence trimming.
+Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) via modern `AudioWorkletNode` and backend Moonshine ONNX (`medium-streaming` via `moonshine-voice`) with persistent model session caching and dynamic silence trimming.
 
 ## Requirements
 
@@ -21,8 +21,8 @@ Transcribes user vocal input captured in the browser into text using client-side
    - Removes DC offset bias: `audio_np = audio_np - np.mean(audio_np)`.
 
 3. **Persistent Model Singleton & Lifespan Warmup**:
-   - Model Variant: Defaults to **`moonshine/base`** (`MoonshineOnnxModel(model_name="base")`) for reliable transcription accuracy.
-   - Initializes and warms up the STT model singleton once during server lifespan startup. Reconstructive per-request ONNX session reloading is strictly avoided.
+   - Model Variant: Defaults to **`medium-streaming`** (`ModelArch.MEDIUM_STREAMING` via `moonshine-voice`) for maximum accuracy and low latency.
+   - Initializes and warms up the STT model singleton (`Transcriber`) once during server lifespan startup. Reconstructive per-request ONNX session reloading is strictly avoided.
 
 4. **Dynamic Silence Trimming & Single-Pass Inference**:
    - **Dynamic Silence Trimming**: Executes dynamic silence trimming with adaptive RMS thresholding and 250ms pre/post margin before inference. Eliminates Moonshine decoder `EOS` (token `2`) early-termination caused by leading silence $\ge 2.0$s.

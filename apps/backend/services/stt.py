@@ -1,34 +1,77 @@
-"""Speech-to-Text (STT) service utilizing Moonshine ONNX."""
+"""Speech-to-Text (STT) service utilizing Moonshine Voice."""
 
 import io
+from typing import Optional, Tuple
 import numpy as np
 import soundfile as sf
 from pydub import AudioSegment
-import moonshine_onnx
+from moonshine_voice import (
+    ModelArch,
+    Transcriber,
+    get_model_for_language,
+    string_to_model_arch,
+)
 from apps.backend.config import settings
 
-_tokenizer = None
-_stt_model: moonshine_onnx.MoonshineOnnxModel | None = None
+_stt_model: Optional[Transcriber] = None
 
 
-def get_tokenizer():
-    global _tokenizer
-    if _tokenizer is None:
-        _tokenizer = moonshine_onnx.load_tokenizer()
-    return _tokenizer
+def resolve_model_arch(model_name: str) -> Tuple[str, ModelArch]:
+    """
+    Resolve language tag and ModelArch enum from model name string.
+
+    Canonical Moonshine Voice architectures:
+      - 'medium-streaming' -> ('en', ModelArch.MEDIUM_STREAMING)
+      - 'small-streaming'  -> ('en', ModelArch.SMALL_STREAMING)
+      - 'base-streaming'   -> ('en', ModelArch.BASE_STREAMING)
+      - 'tiny-streaming'   -> ('en', ModelArch.TINY_STREAMING)
+      - 'base'             -> ('en', ModelArch.BASE)
+      - 'tiny'             -> ('en', ModelArch.TINY)
+    """
+    cleaned = model_name.strip().lower()
+    if "/" in cleaned:
+        cleaned = cleaned.split("/")[-1]
+
+    lang = "en"
+    if cleaned in ("small", "small-streaming", "streaming-small", "moonshine-streaming-small"):
+        arch = ModelArch.SMALL_STREAMING
+    elif cleaned in ("tiny-streaming", "streaming-tiny", "moonshine-streaming-tiny"):
+        arch = ModelArch.TINY_STREAMING
+    elif cleaned in ("medium", "medium-streaming", "streaming-medium", "moonshine-streaming-medium"):
+        arch = ModelArch.MEDIUM_STREAMING
+    elif cleaned in ("base-streaming", "streaming-base", "moonshine-streaming-base", "moonshine-streaming"):
+        arch = ModelArch.BASE_STREAMING
+    elif cleaned in ("base", "moonshine-base"):
+        arch = ModelArch.BASE
+    elif cleaned in ("tiny", "moonshine-tiny"):
+        arch = ModelArch.TINY
+    else:
+        try:
+            arch = string_to_model_arch(cleaned)
+        except ValueError:
+            print(f"⚠️ Unknown STT model architecture '{model_name}', defaulting to MEDIUM_STREAMING")
+            arch = ModelArch.MEDIUM_STREAMING
+
+    return lang, arch
 
 
-def get_stt_model() -> moonshine_onnx.MoonshineOnnxModel:
-    """Warmup and initialize tokenizer and Moonshine ONNX model singleton."""
+def get_stt_model() -> Transcriber:
+    """Warmup and initialize Moonshine Transcriber singleton."""
     global _stt_model
     if _stt_model is None:
-        get_tokenizer()
-        print(f"📦 Initializing Moonshine STT Model ({settings.stt_model_name})...")
-        _stt_model = moonshine_onnx.MoonshineOnnxModel(model_name=settings.stt_model_name)
-        dummy = np.zeros(16000, dtype=np.float32)
+        lang, arch = resolve_model_arch(settings.stt_model_name)
+        print(f"📦 Initializing Moonshine STT Model ({settings.stt_model_name} -> {arch.name})...")
+        model_path, model_arch = get_model_for_language(lang, arch)
+        _stt_model = Transcriber(model_path, model_arch)
+
+        # Warmup inference
+        dummy = [0.0] * 16000
         try:
-            moonshine_onnx.transcribe(dummy, model=_stt_model)
-            print("✅ Moonshine STT Model initialized and warmed up.")
+            stream = _stt_model.create_stream()
+            stream.start()
+            stream.add_audio(dummy, 16000)
+            stream.stop()
+            print(f"✅ Moonshine STT Model ({arch.name}) initialized and warmed up.")
         except Exception as e:
             print(f"⚠️ STT warmup info: {e}")
     return _stt_model
@@ -42,7 +85,7 @@ def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     if not audio_bytes or len(audio_bytes) < 100:
         return np.zeros(0, dtype=np.float32)
 
-    # 1. Primary path: AudioSegment (standardized across reference project)
+    # 1. Primary path: AudioSegment
     try:
         audio_stream = io.BytesIO(audio_bytes)
         audio_seg = AudioSegment.from_file(audio_stream)
@@ -84,10 +127,15 @@ def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     return audio_np
 
 
-def trim_silence(audio: np.ndarray, samplerate: int = 16000, frame_duration_ms: int = 30, padding_ms: int = 250) -> np.ndarray:
+def trim_silence(
+    audio: np.ndarray,
+    samplerate: int = 16000,
+    frame_duration_ms: int = 30,
+    padding_ms: int = 250,
+) -> np.ndarray:
     """
-    Trim extended leading and trailing silence from audio to prevent Moonshine ONNX
-    decoder from early-terminating with EOS at frame 0.
+    Trim extended leading and trailing silence from audio to prevent decoder
+    early-termination on long leading pauses.
     """
     if len(audio) == 0:
         return audio
@@ -142,7 +190,7 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         print(f"[STT Diagnostics] Audio segment too short: {len(audio_data)} samples ({duration:.3f}s)")
         return ""
 
-    # Trim leading/trailing silence to eliminate decoder EOS triggers at frame 0
+    # Trim leading/trailing silence
     trimmed_audio = trim_silence(audio_data)
     trimmed_duration = len(trimmed_audio) / 16000
     if len(trimmed_audio) < 1600:
@@ -160,27 +208,25 @@ def transcribe_audio(audio_bytes: bytes) -> str:
 
     # Direct transcription of speech sequence
     try:
-        results = moonshine_onnx.transcribe(trimmed_audio, model=model)
-        if isinstance(results, list) and len(results) > 0:
-            text = str(results[0]).strip()
-        else:
-            text = str(results).strip()
+        stream = model.create_stream()
+        stream.start()
+        stream.add_audio(trimmed_audio.tolist(), 16000)
+        transcript = stream.stop()
+        text = " ".join(line.text for line in transcript.lines).strip()
 
         # Retry fallback with peak normalization if result is empty on audible speech
         if not text and float(np.sqrt(np.mean(trimmed_audio**2))) > 0.01:
-            peak = np.max(np.abs(trimmed_audio))
+            peak = float(np.max(np.abs(trimmed_audio)))
             if peak > 0:
                 normalized_audio = (trimmed_audio / peak) * 0.95
-                retry_res = moonshine_onnx.transcribe(normalized_audio, model=model)
-                if isinstance(retry_res, list) and len(retry_res) > 0:
-                    text = str(retry_res[0]).strip()
-                else:
-                    text = str(retry_res).strip()
+                retry_stream = model.create_stream()
+                retry_stream.start()
+                retry_stream.add_audio(normalized_audio.tolist(), 16000)
+                retry_transcript = retry_stream.stop()
+                text = " ".join(line.text for line in retry_transcript.lines).strip()
 
         print(f"[STT Diagnostics] Decoded Text: '{text}'")
         return text
     except Exception as e:
         print(f"[STT Diagnostics] Error transcribing audio: {e}")
         return ""
-
-
