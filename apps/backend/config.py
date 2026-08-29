@@ -48,6 +48,10 @@ class Settings(BaseModel):
         default=os.getenv("LLM_MODEL", "google/gemma-3-4b-it-qat"),
         description="Target model identifier",
     )
+    llm_history_limit: int = Field(
+        default=int(os.getenv("LLM_HISTORY_LIMIT", "50")),
+        description="Maximum number of past messages to send in LLM prompt context",
+    )
 
     # STT Settings
     stt_model_name: str = Field(
@@ -90,6 +94,12 @@ def get_settings() -> Settings:
     parser.add_argument("--base-url", type=str, default=os.getenv("LLM_BASE_URL", None))
     parser.add_argument("--api-key", type=str, default=os.getenv("LLM_API_KEY", None))
     parser.add_argument("--mongo-uri", type=str, default=os.getenv("MONGO_URI", None))
+    parser.add_argument(
+        "--history-limit",
+        type=int,
+        default=int(os.getenv("LLM_HISTORY_LIMIT", "50")),
+        help="Maximum past messages to send in LLM prompt context",
+    )
 
     args, _ = parser.parse_known_args()
 
@@ -127,6 +137,7 @@ def get_settings() -> Settings:
         llm_base_url=base_url,
         llm_api_key=api_key,
         llm_model=model,
+        llm_history_limit=args.history_limit,
         mongo_uri=mongo_uri,
     )
 

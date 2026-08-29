@@ -178,7 +178,7 @@ async def chat(req: ChatRequest):
     await add_message(session_id=req.session_id, role="user", text=req.text)
 
     # Fetch past message history for context
-    history = await get_messages(req.session_id, limit=20)
+    history = await get_messages(req.session_id, limit=settings.llm_history_limit)
 
     # Optional RAG context retrieval
     system_prompt = SYSTEM_PROMPT
@@ -252,7 +252,7 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({"type": "user_message", "text": user_text, "session_id": session_id})
 
                 # Stream LLM tokens and accumulate for sentence-level TTS
-                history = await get_messages(session_id, limit=20)
+                history = await get_messages(session_id, limit=settings.llm_history_limit)
                 full_reply = ""
                 sentence_buffer = ""
 
