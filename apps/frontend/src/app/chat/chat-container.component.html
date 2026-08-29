@@ -106,7 +106,7 @@
       <app-voice-input
         [isRecording]="isRecording()"
         [isProcessing]="isProcessingVoice()"
-        [disabled]="isSpeaking() || isStreaming()"
+        [disabled]="isProcessingVoice()"
         (onToggleMic)="toggleRecording()"
       ></app-voice-input>
 
@@ -117,18 +117,18 @@
           (ngModelChange)="inputText.set($event)"
           placeholder="Ask anything or speak into your microphone..."
           (keydown.enter)="sendText()"
-          [disabled]="isStreaming() || isProcessingVoice()"
+          [disabled]="isProcessingVoice()"
         />
         <button
           class="send-btn"
-          [disabled]="!inputText().trim() || isStreaming() || isProcessingVoice()"
+          [disabled]="!inputText().trim() || isProcessingVoice()"
           (click)="sendText()"
         >
           <i class="pi pi-send"></i>
         </button>
       </div>
 
-      @if (isSpeaking()) {
+      @if (isSpeaking() || isStreaming()) {
         <button
           class="stop-audio-btn"
           (click)="stopSpeechPlayback()"

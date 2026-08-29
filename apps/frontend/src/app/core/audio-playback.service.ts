@@ -8,6 +8,7 @@ export class AudioPlaybackService {
   private queue: AudioBuffer[] = [];
   private isProcessingQueue = false;
   private currentSource: AudioBufferSourceNode | null = null;
+  private playbackEpoch = 0;
 
   private _isPlaying = signal<boolean>(false);
   readonly isPlaying = this._isPlaying.asReadonly();
@@ -62,10 +63,11 @@ export class AudioPlaybackService {
     if (this._isMuted()) {
       return;
     }
+    const epoch = this.playbackEpoch;
     const ctx = this.initAudioContext();
     try {
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-      if (this._isMuted()) {
+      if (this._isMuted() || this.playbackEpoch !== epoch) {
         return;
       }
       this.queue.push(audioBuffer);
@@ -90,25 +92,42 @@ export class AudioPlaybackService {
     const buffer = this.queue.shift()!;
     const ctx = this.initAudioContext();
 
-    this.currentSource = ctx.createBufferSource();
-    this.currentSource.buffer = buffer;
-    this.currentSource.connect(ctx.destination);
+    const source = ctx.createBufferSource();
+    this.currentSource = source;
+    source.buffer = buffer;
+    source.connect(ctx.destination);
 
-    this.currentSource.onended = () => {
-      this.currentSource = null;
-      this.processQueue();
+    const epoch = this.playbackEpoch;
+    source.onended = () => {
+      if (this.currentSource === source) {
+        this.currentSource = null;
+      }
+      if (this.playbackEpoch === epoch) {
+        this.processQueue();
+      }
     };
 
-    this.currentSource.start(0);
+    try {
+      source.start(0);
+    } catch (err) {
+      console.error('Error starting audio buffer source:', err);
+      if (this.playbackEpoch === epoch) {
+        this.processQueue();
+      }
+    }
   }
 
   stopPlayback(): void {
+    this.playbackEpoch++;
     this.queue = [];
     if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-      } catch (e) {}
+      const source = this.currentSource;
       this.currentSource = null;
+      source.onended = null;
+      try {
+        source.stop();
+        source.disconnect();
+      } catch (e) {}
     }
     this.isProcessingQueue = false;
     this._isPlaying.set(false);
