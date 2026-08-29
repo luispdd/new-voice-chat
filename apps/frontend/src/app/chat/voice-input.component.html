@@ -12,9 +12,7 @@
       isProcessing()
         ? 'Processing voice...'
         : isRecording()
-        ? 'Click to stop recording'
-        : disabled()
-        ? 'Microphone unavailable while assistant is speaking'
+        ? 'Listening (VAD active - speak to interrupt or click to stop)'
         : 'Click to talk (VAD active)'
     "
   >
@@ -23,8 +21,6 @@
       [ngClass]="
         isProcessing()
           ? 'pi-spin pi-spinner'
-          : isRecording()
-          ? 'pi-stop-circle'
           : 'pi-microphone'
       "
     ></i>

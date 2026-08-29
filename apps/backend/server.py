@@ -1,5 +1,7 @@
 """FastAPI Server exposing REST endpoints and WebSocket streaming for Voice Chat."""
 
+import asyncio
+import base64
 from contextlib import asynccontextmanager
 import json
 from typing import Any, Optional
@@ -220,15 +222,88 @@ async def add_document(req: IngestDocRequest):
 
 # WebSocket Streaming Endpoint
 
+async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, user_text: str):
+    full_reply = ""
+    sentence_buffer = ""
+    try:
+        # Save user message
+        await add_message(session_id=session_id, role="user", text=user_text)
+        await websocket.send_json({"type": "user_message", "text": user_text, "session_id": session_id})
+
+        # Stream LLM tokens and accumulate for sentence-level TTS
+        history = await get_messages(session_id, limit=settings.llm_history_limit)
+
+        async for token in stream_chat_completion(history, system_prompt=SYSTEM_PROMPT):
+            full_reply += token
+            sentence_buffer += token
+            await websocket.send_json({"type": "token", "token": token})
+
+            # If sentence boundary reached, synthesize and send sentence
+            sentences = split_into_sentences(sentence_buffer)
+            if len(sentences) > 1:
+                complete_sentence = sentences[0]
+                sentence_buffer = " ".join(sentences[1:])
+                clean_sentence = sanitize_for_tts(complete_sentence)
+                if clean_sentence:
+                    try:
+                        wav_data = text_to_wav_bytes(clean_sentence)
+                        if wav_data:
+                            audio_b64 = base64.b64encode(wav_data).decode("utf-8")
+                            await websocket.send_json({
+                                "type": "audio_sentence",
+                                "sentence": clean_sentence,
+                                "audio": audio_b64,
+                            })
+                    except Exception as e:
+                        print(f"Error in TTS sentence synthesis: {e}")
+
+        # Synthesize any remaining sentence buffer
+        if sentence_buffer.strip():
+            clean_sentence = sanitize_for_tts(sentence_buffer.strip())
+            if clean_sentence:
+                try:
+                    wav_data = text_to_wav_bytes(clean_sentence)
+                    if wav_data:
+                        audio_b64 = base64.b64encode(wav_data).decode("utf-8")
+                        await websocket.send_json({
+                            "type": "audio_sentence",
+                            "sentence": clean_sentence,
+                            "audio": audio_b64,
+                        })
+                except Exception as e:
+                    print(f"Error in TTS final synthesis: {e}")
+
+        # Save assistant message
+        if full_reply.strip():
+            await add_message(session_id=session_id, role="assistant", text=full_reply)
+            await websocket.send_json({"type": "done", "full_text": full_reply})
+    except asyncio.CancelledError:
+        print(f"Generation cancelled for session {session_id}")
+        if full_reply.strip():
+            try:
+                await add_message(session_id=session_id, role="assistant", text=full_reply)
+            except Exception:
+                pass
+        raise
+    except Exception as e:
+        print(f"Error during streaming generation: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": f"[Error: {str(e)}]"})
+        except Exception:
+            pass
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     """
     Bi-directional streaming WebSocket:
-    - Receives text or audio messages
+    - Receives text, interrupt, or audio messages
     - Streams LLM text tokens and synthesized audio chunks back to the client
+    - Supports real-time cancellation / barge-in
     """
     await websocket.accept()
     current_session_id = None
+    active_task: Optional[asyncio.Task] = None
 
     try:
         while True:
@@ -246,63 +321,37 @@ async def websocket_chat(websocket: WebSocket):
             else:
                 current_session_id = session_id
 
-            if msg_type == "text" and user_text.strip():
-                # Save user message
-                await add_message(session_id=session_id, role="user", text=user_text)
-                await websocket.send_json({"type": "user_message", "text": user_text, "session_id": session_id})
+            if msg_type == "interrupt":
+                if active_task and not active_task.done():
+                    active_task.cancel()
+                    try:
+                        await active_task
+                    except asyncio.CancelledError:
+                        pass
+                    active_task = None
+                await websocket.send_json({"type": "interrupted", "session_id": session_id})
 
-                # Stream LLM tokens and accumulate for sentence-level TTS
-                history = await get_messages(session_id, limit=settings.llm_history_limit)
-                full_reply = ""
-                sentence_buffer = ""
+            elif msg_type == "text" and user_text.strip():
+                if active_task and not active_task.done():
+                    active_task.cancel()
+                    try:
+                        await active_task
+                    except asyncio.CancelledError:
+                        pass
+                    active_task = None
 
-                async for token in stream_chat_completion(history, system_prompt=SYSTEM_PROMPT):
-                    full_reply += token
-                    sentence_buffer += token
-                    await websocket.send_json({"type": "token", "token": token})
-
-                    # If sentence boundary reached, synthesize and send sentence
-                    sentences = split_into_sentences(sentence_buffer)
-                    if len(sentences) > 1:
-                        complete_sentence = sentences[0]
-                        sentence_buffer = " ".join(sentences[1:])
-                        clean_sentence = sanitize_for_tts(complete_sentence)
-                        if clean_sentence:
-                            try:
-                                wav_data = text_to_wav_bytes(clean_sentence)
-                                if wav_data:
-                                    import base64
-                                    audio_b64 = base64.b64encode(wav_data).decode("utf-8")
-                                    await websocket.send_json({
-                                        "type": "audio_sentence",
-                                        "sentence": clean_sentence,
-                                        "audio": audio_b64,
-                                    })
-                            except Exception as e:
-                                print(f"Error in TTS sentence synthesis: {e}")
-
-                # Synthesize any remaining sentence buffer
-                if sentence_buffer.strip():
-                    clean_sentence = sanitize_for_tts(sentence_buffer.strip())
-                    if clean_sentence:
-                        try:
-                            wav_data = text_to_wav_bytes(clean_sentence)
-                            if wav_data:
-                                import base64
-                                audio_b64 = base64.b64encode(wav_data).decode("utf-8")
-                                await websocket.send_json({
-                                    "type": "audio_sentence",
-                                    "sentence": clean_sentence,
-                                    "audio": audio_b64,
-                                })
-                        except Exception as e:
-                            print(f"Error in TTS final synthesis: {e}")
-
-                # Save assistant message
-                await add_message(session_id=session_id, role="assistant", text=full_reply)
-                await websocket.send_json({"type": "done", "full_text": full_reply})
+                active_task = asyncio.create_task(
+                    _stream_chat_and_synthesize(websocket, session_id, user_text)
+                )
 
     except WebSocketDisconnect:
         print(f"WebSocket client disconnected for session {current_session_id}")
     except Exception as e:
         print(f"WebSocket exception: {e}")
+    finally:
+        if active_task and not active_task.done():
+            active_task.cancel()
+            try:
+                await active_task
+            except (asyncio.CancelledError, Exception):
+                pass

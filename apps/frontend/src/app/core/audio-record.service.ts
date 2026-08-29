@@ -1,46 +1,48 @@
-import { Injectable } from '@angular/core';
-import { Subject, BehaviorSubject, Observable } from 'rxjs';
+import { Injectable, inject, signal } from '@angular/core';
+import { AudioPlaybackService } from './audio-playback.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AudioRecordService {
+  private audioPlayback = inject(AudioPlaybackService);
+
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private gainNode: GainNode | null = null;
 
-  private isRecording$ = new BehaviorSubject<boolean>(false);
+  private _isRecording = signal<boolean>(false);
+  readonly isRecording = this._isRecording.asReadonly();
+
+  private _audioLevel = signal<number>(0);
+  readonly audioLevel = this._audioLevel.asReadonly();
+
+  private _audioChunk = signal<Blob | null>(null);
+  readonly audioChunk = this._audioChunk.asReadonly();
+
+  private _speechDetected = signal<number>(0);
+  readonly speechDetected = this._speechDetected.asReadonly();
+
   private audioChunks: Float32Array[] = [];
-  private audioLevel$ = new Subject<number>();
-  private audioChunkReady$ = new Subject<Blob>();
   private sampleRate = 16000;
 
   // VAD parameters
   private vadActive = false;
   private silenceTimer: any = null;
   private readonly silenceThreshold = 0.018;
+  private readonly bargeInThreshold = 0.045;
+  private consecutiveSpeechFrames = 0;
+  private lastUtteranceEndTime = 0;
   private readonly silenceDurationMs = 1500;
 
-  get isRecording(): Observable<boolean> {
-    return this.isRecording$.asObservable();
-  }
-
   get isRecordingActive(): boolean {
-    return this.isRecording$.value;
-  }
-
-  get audioLevel(): Observable<number> {
-    return this.audioLevel$.asObservable();
-  }
-
-  get onAudioChunkReady(): Observable<Blob> {
-    return this.audioChunkReady$.asObservable();
+    return this._isRecording();
   }
 
   async startRecording(): Promise<void> {
-    if (this.isRecording$.value) return;
+    if (this._isRecording()) return;
 
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -66,7 +68,7 @@ export class AudioRecordService {
 
       this.audioChunks = [];
       this.vadActive = false;
-      this.isRecording$.next(true);
+      this._isRecording.set(true);
 
       const dataArray = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
       const preRollChunks: Float32Array[] = [];
@@ -116,7 +118,7 @@ export class AudioRecordService {
     preRollChunks: Float32Array[],
     maxPreRoll: number
   ): void {
-    if (!this.isRecording$.value) return;
+    if (!this._isRecording()) return;
     const chunk = new Float32Array(inputData);
 
     // Calculate RMS audio level
@@ -126,47 +128,79 @@ export class AudioRecordService {
       sum += inputData[i] * inputData[i];
     }
     const rms = Math.sqrt(sum / inputData.length);
-    this.audioLevel$.next(Math.min(rms * 5, 1)); // Normalized 0-1
+    this._audioLevel.set(Math.min(rms * 5, 1)); // Normalized 0-1
+
+    const now = Date.now();
+    const isAssistantSpeaking = this.audioPlayback.isPlaying();
+    const activeThreshold = isAssistantSpeaking ? this.bargeInThreshold : this.silenceThreshold;
+    const inCooldown = now - this.lastUtteranceEndTime < 500;
 
     // Voice Activity Detection logic
-    if (rms > this.silenceThreshold) {
-      if (!this.vadActive) {
-        this.vadActive = true;
-        // Prepend pre-roll chunks so initial consonants/phonemes are fully preserved
-        this.audioChunks = [...preRollChunks, chunk];
-        preRollChunks.length = 0;
-      } else {
-        this.audioChunks.push(chunk);
-      }
+    if (rms > activeThreshold && !inCooldown) {
+      this.consecutiveSpeechFrames++;
+      if (this.consecutiveSpeechFrames >= 2) {
+        if (!this.vadActive) {
+          this.vadActive = true;
+          this._speechDetected.update((c) => c + 1);
+          // Prepend pre-roll chunks so initial consonants/phonemes are fully preserved
+          this.audioChunks = [...preRollChunks, chunk];
+          preRollChunks.length = 0;
+        } else {
+          this.audioChunks.push(chunk);
+        }
 
-      if (this.silenceTimer) {
-        clearTimeout(this.silenceTimer);
-        this.silenceTimer = null;
-      }
-    } else if (this.vadActive) {
-      this.audioChunks.push(chunk);
-      if (!this.silenceTimer) {
-        this.silenceTimer = setTimeout(() => {
-          if (this.vadActive && this.audioChunks.length > 5) {
-            this.stopRecording();
-          }
-        }, this.silenceDurationMs);
+        if (this.silenceTimer) {
+          clearTimeout(this.silenceTimer);
+          this.silenceTimer = null;
+        }
       }
     } else {
-      // Keep a rolling pre-roll buffer while waiting for speech to begin
-      preRollChunks.push(chunk);
-      if (preRollChunks.length > maxPreRoll) {
-        preRollChunks.shift();
+      this.consecutiveSpeechFrames = 0;
+      if (this.vadActive) {
+        this.audioChunks.push(chunk);
+        if (!this.silenceTimer) {
+          this.silenceTimer = setTimeout(() => {
+            if (this.vadActive && this.audioChunks.length > 5) {
+              this.finishUtterance();
+            }
+          }, this.silenceDurationMs);
+        }
+      } else {
+        // Keep a rolling pre-roll buffer while waiting for speech to begin
+        preRollChunks.push(chunk);
+        if (preRollChunks.length > maxPreRoll) {
+          preRollChunks.shift();
+        }
       }
     }
   }
 
+  private finishUtterance(): void {
+    this.lastUtteranceEndTime = Date.now();
+    this.consecutiveSpeechFrames = 0;
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+    this.vadActive = false;
+
+    if (this.audioChunks.length > 5) {
+      const wavBlob = this.exportWAV(this.audioChunks, this.sampleRate);
+      this.audioChunks = [];
+      this._audioChunk.set(wavBlob);
+    } else {
+      this.audioChunks = [];
+    }
+  }
+
   stopRecording(): Blob | null {
-    if (!this.isRecording$.value && this.audioChunks.length === 0) {
+    this.lastUtteranceEndTime = 0;
+    this.consecutiveSpeechFrames = 0;
+    if (!this._isRecording() && this.audioChunks.length === 0) {
       return null;
     }
 
-    this.isRecording$.next(false);
+    this._isRecording.set(false);
     this.vadActive = false;
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
@@ -195,12 +229,12 @@ export class AudioRecordService {
       this.audioContext = null;
     }
 
-    this.audioLevel$.next(0);
+    this._audioLevel.set(0);
 
     if (this.audioChunks.length > 5) {
       const wavBlob = this.exportWAV(this.audioChunks, this.sampleRate);
       this.audioChunks = [];
-      this.audioChunkReady$.next(wavBlob);
+      this._audioChunk.set(wavBlob);
       return wavBlob;
     }
     this.audioChunks = [];

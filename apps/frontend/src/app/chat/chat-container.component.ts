@@ -1,7 +1,6 @@
-import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChild, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
 
 import { ApiService, Message, Session } from '../core/api.service';
 import { AudioRecordService } from '../core/audio-record.service';
@@ -50,7 +49,8 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   );
   isStreaming = signal<boolean>(false);
   streamingText = signal<string>('');
-  isRecording = signal<boolean>(false);
+  readonly isRecording = this.audioRecord.isRecording;
+  readonly audioLevel = this.audioRecord.audioLevel;
   isProcessingVoice = signal<boolean>(false);
   isVadActive = signal<boolean>(false);
   healthInfo = signal<any>(null);
@@ -58,21 +58,76 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   readonly isSpeaking = this.audioPlayback.isPlaying;
   readonly isMuted = this.audioPlayback.isMuted;
 
-  private subs = new Subscription();
-
   constructor() {
     effect(() => {
-      const playing = this.audioPlayback.isPlaying();
-      if (playing && this.isRecording()) {
-        this.audioRecord.stopRecording();
-      } else if (!playing && !this.isStreaming() && !this.isProcessingVoice()) {
+      const vad = this.isVadActive();
+      const rec = this.isRecording();
+      const proc = this.isProcessingVoice();
+      if (vad && !rec && !proc) {
         this.restartVadIfActive();
+      }
+    });
+
+    // React to speech onset detected signal for immediate audio barge-in
+    effect(() => {
+      const detected = this.audioRecord.speechDetected();
+      if (detected > 0) {
+        untracked(() => {
+          this.handleBargeIn();
+        });
+      }
+    });
+
+    // React to recorded voice chunks from VAD signal
+    effect(() => {
+      const chunk = this.audioRecord.audioChunk();
+      if (chunk) {
+        untracked(() => {
+          this.handleAudioChunk(chunk);
+        });
+      }
+    });
+
+    // React to WebSocket events signal
+    effect(() => {
+      const event = this.api.wsMessage();
+      if (event) {
+        untracked(() => {
+          this.handleWsEvent(event);
+        });
       }
     });
   }
 
   toggleMute(): void {
     this.audioPlayback.toggleMute();
+  }
+
+  handleBargeIn(): void {
+    if (this.audioPlayback.isPlaying() || this.isStreaming()) {
+      this.audioPlayback.stopPlayback();
+      if (this.isStreaming()) {
+        const partialText = this.streamingText().trim();
+        if (partialText) {
+          this.messages.update((msgs) => [
+            ...msgs,
+            {
+              session_id: this.currentSessionId(),
+              role: 'assistant',
+              text: partialText,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          this.chatHistory()?.scrollToBottom(true);
+        }
+        this.isStreaming.set(false);
+        this.streamingText.set('');
+      }
+      this.api.sendWsMessage({
+        type: 'interrupt',
+        session_id: this.currentSessionId(),
+      });
+    }
   }
 
   async ngOnInit() {
@@ -86,30 +141,11 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
     await this.loadSessions();
 
-    // Sync recording state
-    this.subs.add(
-      this.audioRecord.isRecording.subscribe((isRecording) => {
-        this.isRecording.set(isRecording);
-      })
-    );
-
-    // Listen to recorded voice chunks from VAD
-    this.subs.add(
-      this.audioRecord.onAudioChunkReady.subscribe(async (wavBlob) => {
-        await this.handleAudioChunk(wavBlob);
-      })
-    );
-
     // Connect WebSocket for streaming
-    this.subs.add(
-      this.api.connectWebSocket().subscribe((event) => {
-        this.handleWsEvent(event);
-      })
-    );
+    this.api.connectWebSocket();
   }
 
   ngOnDestroy() {
-    this.subs.unsubscribe();
     this.isVadActive.set(false);
     this.audioRecord.stopRecording();
     this.audioPlayback.stopPlayback();
@@ -195,10 +231,17 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     }
   }
 
-  async sendText() {
-    const text = this.inputText().trim();
-    if (!text || this.isStreaming()) return;
-    this.inputText.set('');
+  async sendText(customText?: string) {
+    const text = (customText !== undefined ? customText : this.inputText()).trim();
+    if (!text) return;
+    if (customText === undefined) {
+      this.inputText.set('');
+    }
+
+    // Preemptively stop ongoing playback if active
+    if (this.audioPlayback.isPlaying()) {
+      this.audioPlayback.stopPlayback();
+    }
 
     // Optimistically add user message
     this.messages.update((msgs) => [
@@ -227,8 +270,19 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
       this.isVadActive.set(false);
       this.audioRecord.stopRecording();
     } else {
-      if (this.isSpeaking() || this.isProcessingVoice() || this.isStreaming()) {
+      if (this.isProcessingVoice()) {
         return;
+      }
+      if (this.isSpeaking() || this.isStreaming()) {
+        this.audioPlayback.stopPlayback();
+        if (this.isStreaming()) {
+          this.isStreaming.set(false);
+          this.streamingText.set('');
+        }
+        this.api.sendWsMessage({
+          type: 'interrupt',
+          session_id: this.currentSessionId(),
+        });
       }
       this.isVadActive.set(true);
       try {
@@ -240,15 +294,15 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async handleAudioChunk(blob: Blob) {
+  async handleAudioChunk(blob: Blob) {
     this.isProcessingVoice.set(true);
     let shouldRestartVad = false;
 
     try {
       const transcribedText = await this.api.transcribeAudio(blob);
       if (transcribedText && transcribedText.trim()) {
-        this.inputText.set(transcribedText);
-        await this.sendText();
+        this.isProcessingVoice.set(false);
+        await this.sendText(transcribedText.trim());
       } else {
         // Empty audio transcription detected
         this.messages.update((msgs) => [
@@ -286,33 +340,51 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   private async handleWsEvent(event: any) {
     if (event.type === 'token') {
-      if (this.isRecording()) {
-        this.audioRecord.stopRecording();
+      if (this.isStreaming()) {
+        this.streamingText.update((t) => t + event.token);
+        this.chatHistory()?.scrollToBottom(true);
       }
-      this.streamingText.update((t) => t + event.token);
     } else if (event.type === 'audio_sentence') {
-      if (this.isRecording()) {
-        this.audioRecord.stopRecording();
-      }
-      if (event.audio) {
+      if (this.isStreaming() && event.audio) {
         this.audioPlayback.enqueueBase64Wav(event.audio);
       }
-    } else if (event.type === 'done') {
-      const isError = !event.full_text || event.full_text.trim().startsWith('[Error') || event.full_text.trim() === '';
-      this.messages.update((msgs) => [
-        ...msgs,
-        {
-          session_id: this.currentSessionId(),
-          role: 'assistant',
-          text: event.full_text || 'Error: Empty response received from server.',
-          is_error: isError,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+    } else if (event.type === 'interrupted') {
+      if (this.isStreaming()) {
+        const partialText = this.streamingText().trim();
+        if (partialText) {
+          this.messages.update((msgs) => [
+            ...msgs,
+            {
+              session_id: this.currentSessionId(),
+              role: 'assistant',
+              text: partialText,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          this.chatHistory()?.scrollToBottom(true);
+        }
+      }
       this.isStreaming.set(false);
       this.streamingText.set('');
+    } else if (event.type === 'done') {
+      if (this.isStreaming()) {
+        const isError = !event.full_text || event.full_text.trim().startsWith('[Error') || event.full_text.trim() === '';
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            session_id: this.currentSessionId(),
+            role: 'assistant',
+            text: event.full_text || 'Error: Empty response received from server.',
+            is_error: isError,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        this.isStreaming.set(false);
+        this.streamingText.set('');
+        this.chatHistory()?.scrollToBottom(true);
+      }
 
-      if (!this.isSpeaking()) {
+      if (this.isVadActive()) {
         await this.restartVadIfActive();
       }
     } else if (event.type === 'error') {
@@ -328,15 +400,16 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
       ]);
       this.isStreaming.set(false);
       this.streamingText.set('');
+      this.chatHistory()?.scrollToBottom(true);
       await this.restartVadIfActive();
     }
   }
 
   private async restartVadIfActive() {
-    if (this.isVadActive() && !this.isRecording() && !this.isSpeaking() && !this.isStreaming() && !this.isProcessingVoice()) {
+    if (this.isVadActive() && !this.isRecording() && !this.isProcessingVoice()) {
       try {
         await new Promise((r) => setTimeout(r, 100));
-        if (this.isVadActive() && !this.isRecording() && !this.isSpeaking() && !this.isStreaming() && !this.isProcessingVoice()) {
+        if (this.isVadActive() && !this.isRecording() && !this.isProcessingVoice()) {
           await this.audioRecord.startRecording();
         }
       } catch (e) {
@@ -356,5 +429,26 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   stopSpeechPlayback() {
     this.audioPlayback.stopPlayback();
+    if (this.isStreaming()) {
+      const partialText = this.streamingText().trim();
+      if (partialText) {
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            session_id: this.currentSessionId(),
+            role: 'assistant',
+            text: partialText,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        this.chatHistory()?.scrollToBottom(true);
+      }
+      this.isStreaming.set(false);
+      this.streamingText.set('');
+    }
+    this.api.sendWsMessage({
+      type: 'interrupt',
+      session_id: this.currentSessionId(),
+    });
   }
 }

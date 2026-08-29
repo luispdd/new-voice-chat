@@ -1,5 +1,4 @@
-import { Injectable } from '@angular/core';
-import { Observable, Subject } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
 
 export interface Session {
   session_id: string;
@@ -27,7 +26,8 @@ export class ApiService {
   private baseUrl = window.location.protocol + '//' + window.location.hostname + ':8000';
   private wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.hostname + ':8000/ws/chat';
   private ws: WebSocket | null = null;
-  private wsMessages$ = new Subject<any>();
+  private _wsMessage = signal<any>(null);
+  readonly wsMessage = this._wsMessage.asReadonly();
 
   constructor() {}
 
@@ -112,14 +112,14 @@ export class ApiService {
   }
 
   // WebSocket Connection
-  connectWebSocket(): Observable<any> {
+  connectWebSocket(): void {
     if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
       this.ws = new WebSocket(this.wsUrl);
 
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          this.wsMessages$.next(data);
+          this._wsMessage.set(data);
         } catch (e) {
           console.error('Error parsing WS message', e);
         }
@@ -128,7 +128,6 @@ export class ApiService {
       this.ws.onerror = (err) => console.error('WebSocket error:', err);
       this.ws.onclose = () => console.log('WebSocket closed');
     }
-    return this.wsMessages$.asObservable();
   }
 
   sendWsMessage(payload: any): void {
