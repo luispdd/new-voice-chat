@@ -24,11 +24,12 @@ Provides text-based conversation capabilities supporting real-time token streami
 4. **Error Handling & Provider Diagnostics**:
    - The backend must provide clean, user-friendly error messages indicating the service provider and the reason of the error when the LLM service is offline, unreachable, or encounters an issue.
    - Error messages yielded during streaming or REST chat must start with `[Error: ...]` to enable automatic frontend error styling (`is_error: true`), and are sanitized and narrated aloud via TTS for clear voice companion feedback.
-5. **Conversation history**:
+5. **Conversation history & Context Window**:
    - The user can create, rename and delete conversations.
    - The conversations should be displayed in the sidebar.
    - The user can switch between conversations.
    - The user can view the conversation history.
+   - **Context Window History**: The backend retrieves up to the latest **50 messages** (`limit=50`, ~25 conversational turns) from the active session to form the LLM conversation prompt context, optimizing memory retention while preserving low latency and staying within model context windows.
 6. **UI**:
    - The user can switch between conversations.
    - The user can view the conversation history.
