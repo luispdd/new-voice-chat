@@ -25,6 +25,7 @@ async def init_db() -> AsyncIOMotorDatabase:
     await _db.sessions.create_index("last_active")
     await _db.messages.create_index([("session_id", 1), ("timestamp", 1)])
     await _db.documents.create_index("created_at")
+    await _db.documents.create_index("session_id")
 
     print(f"✅ Connected to MongoDB database: {settings.mongo_db_name}")
     return _db
@@ -127,5 +128,6 @@ async def get_messages(session_id: str, limit: int = 100) -> list[dict[str, Any]
 async def delete_session(session_id: str) -> bool:
     db = get_db()
     await db.messages.delete_many({"session_id": session_id})
+    await db.documents.delete_many({"session_id": session_id})
     res = await db.sessions.delete_one({"session_id": session_id})
     return res.deleted_count > 0

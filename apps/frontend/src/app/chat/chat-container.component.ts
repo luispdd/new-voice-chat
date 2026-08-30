@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, signal, computed, effect, inject, viewChi
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { ApiService, Message, Session } from '../core/api.service';
+import { ApiService, Message, Session, SessionDocument } from '../core/api.service';
 import { AudioRecordService } from '../core/audio-record.service';
 import { AudioPlaybackService } from '../core/audio-playback.service';
 
@@ -54,6 +54,8 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   isProcessingVoice = signal<boolean>(false);
   isVadActive = signal<boolean>(false);
   healthInfo = signal<any>(null);
+  sessionDocuments = signal<SessionDocument[]>([]);
+  isUploadingFile = signal<boolean>(false);
 
   readonly isSpeaking = this.audioPlayback.isPlaying;
   readonly isMuted = this.audioPlayback.isMuted;
@@ -177,6 +179,14 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     this.messages.set(msgs);
     this.isSidebarOpen.set(false);
     this.chatHistory()?.scrollToBottom(true);
+
+    // Load documents attached to this session
+    try {
+      const docs = await this.api.getSessionDocuments(sessionId);
+      this.sessionDocuments.set(docs);
+    } catch {
+      this.sessionDocuments.set([]);
+    }
   }
 
   startEditingSession(session: Session, event?: Event) {
@@ -450,5 +460,57 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
       type: 'interrupt',
       session_id: this.currentSessionId(),
     });
+  }
+
+  triggerFileUpload(): void {
+    const input = document.getElementById('doc-file-input') as HTMLInputElement;
+    if (input) {
+      input.click();
+    }
+  }
+
+  async uploadFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be re-uploaded
+    input.value = '';
+
+    const sessionId = this.currentSessionId();
+    if (!sessionId) return;
+
+    this.isUploadingFile.set(true);
+    try {
+      await this.api.uploadDocument(sessionId, file);
+      const docs = await this.api.getSessionDocuments(sessionId);
+      this.sessionDocuments.set(docs);
+
+      // Show confirmation in chat
+      this.messages.update((msgs) => [
+        ...msgs,
+        {
+          session_id: sessionId,
+          role: 'assistant',
+          text: `Document "${file.name}" attached. I can now answer questions about its contents.`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      this.chatHistory()?.scrollToBottom(true);
+    } catch (e: any) {
+      this.messages.update((msgs) => [
+        ...msgs,
+        {
+          session_id: sessionId,
+          role: 'assistant',
+          text: `Failed to upload "${file.name}": ${e.message || 'Unknown error'}`,
+          is_error: true,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      this.chatHistory()?.scrollToBottom(true);
+    } finally {
+      this.isUploadingFile.set(false);
+    }
   }
 }

@@ -74,6 +74,11 @@
           <span class="sub-status" [class.disconnected]="!isConnected()">
             {{ connectionStatus() }}
           </span>
+          @if (sessionDocuments().length > 0) {
+            <span class="doc-badge" title="Documents attached to this session">
+              <i class="pi pi-file"></i> {{ sessionDocuments().length }}
+            </span>
+          }
         </div>
       </div>
 
@@ -109,6 +114,22 @@
         [disabled]="isProcessingVoice()"
         (onToggleMic)="toggleRecording()"
       ></app-voice-input>
+
+      <button
+        class="attach-btn"
+        (click)="triggerFileUpload()"
+        [disabled]="isUploadingFile()"
+        title="Attach a .txt or .md file"
+      >
+        <i class="pi" [ngClass]="isUploadingFile() ? 'pi-spin pi-spinner' : 'pi-paperclip'"></i>
+      </button>
+      <input
+        id="doc-file-input"
+        type="file"
+        accept=".txt,.md"
+        style="display: none"
+        (change)="uploadFile($event)"
+      />
 
       <div class="input-wrapper">
         <input
