@@ -33,12 +33,13 @@ This repository follows the **Spec-Driven Development (SDD)** methodology. All a
 │   ├── 003-voice-tts-piper.md            # Piper TTS & sentence streaming synthesis
 │   ├── 004-session-persistence-mongo.md  # MongoDB collections & Motor async driver
 │   ├── 005-rag-knowledge-retrieval.md    # Document ingestion & knowledge retrieval
-│   └── 006-secure-context-ssl.md         # SSL certificates for Web Audio API
+│   ├── 006-secure-context-ssl.md         # SSL certificates for Web Audio API
+│   └── 007-production-docker-deployment.md # Multi-stage Docker builds & Nginx reverse proxy
 ├── tasks/                   # Granular work items & progress tracking
 │   ├── backlog/             # Future tasks (FastEmbed, barge-in)
 │   ├── active/              # Tasks currently in development
 │   ├── review/              # Tasks pending review/verification
-│   └── completed/           # Verified implemented tasks (001 - 006)
+│   └── completed/           # Verified implemented tasks (001 - 009)
 └── decisions/               # Architecture Decision Records (ADRs)
     ├── 001-nx-monorepo-with-bun-and-uv.md
     ├── 002-docker-vs-host-execution-strategy.md

@@ -20,10 +20,12 @@ class TestAudioInterruption(unittest.TestCase):
             self.assertEqual(resp.get("type"), "interrupted")
             self.assertEqual(resp.get("session_id"), "s-1")
 
+    @patch("apps.backend.server.session_has_documents", new_callable=AsyncMock)
     @patch("apps.backend.server.add_message", new_callable=AsyncMock)
     @patch("apps.backend.server.get_messages", new_callable=AsyncMock)
     @patch("apps.backend.server.stream_chat_completion")
-    def test_websocket_stream_and_interrupt(self, mock_stream, mock_get_msgs, mock_add_msg):
+    def test_websocket_stream_and_interrupt(self, mock_stream, mock_get_msgs, mock_add_msg, mock_has_docs):
+        mock_has_docs.return_value = False
         mock_get_msgs.return_value = []
         mock_add_msg.return_value = {"session_id": "s-1"}
 
