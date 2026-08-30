@@ -20,7 +20,8 @@
    - Always initialize and warm up `Transcriber` singleton (default `medium-streaming` / `MEDIUM_STREAMING`) once in lifespan startup to avoid per-request model reloading.
    - Decode raw audio payloads via `pydub.AudioSegment.from_file` normalized to 16kHz mono `float32` arrays in `[-1.0, 1.0]` with DC offset removal.
    - Always run `trim_silence()` before Moonshine inference to strip leading/trailing silence with 250ms padding. Moonshine decoder early-terminates with `EOS` (empty string) if audio begins with $\ge 2$s of silence.
-   - Pass the full utterance directly to Moonshine without artificial mid-speech 8s slicing.
+   - Feed audio to `stream.add_audio()` in 1-second frames (`chunk_size = 16000` samples at 16kHz) to ensure streaming decoder state stability and prevent dropouts, before calling `stream.stop()`.
+   - Pass the full utterance directly within a single streaming session without artificial mid-speech slicing across requests.
 3. **Sentence-Level TTS Streaming**: Split incoming LLM token stream at sentence boundaries (`. ! ? \n`) and synthesize audio sentence-by-sentence to achieve low Time-to-First-Audio (TTFA).
 4. **Lifespan Warmup**: Always warm up DB connections, tokenizer, and voice models in FastAPI's `lifespan` handler.
 5. **Development Reload & CPU Optimization**:

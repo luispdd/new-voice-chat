@@ -210,7 +210,13 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     try:
         stream = model.create_stream()
         stream.start()
-        stream.add_audio(trimmed_audio.tolist(), 16000)
+        
+        # Feed audio in 1-second chunks to ensure streaming decoder stability
+        chunk_size = 16000
+        for i in range(0, len(trimmed_audio), chunk_size):
+            chunk = trimmed_audio[i:i + chunk_size].tolist()
+            stream.add_audio(chunk, 16000)
+            
         transcript = stream.stop()
         text = " ".join(line.text for line in transcript.lines).strip()
 
@@ -221,7 +227,9 @@ def transcribe_audio(audio_bytes: bytes) -> str:
                 normalized_audio = (trimmed_audio / peak) * 0.95
                 retry_stream = model.create_stream()
                 retry_stream.start()
-                retry_stream.add_audio(normalized_audio.tolist(), 16000)
+                for i in range(0, len(normalized_audio), chunk_size):
+                    chunk = normalized_audio[i:i + chunk_size].tolist()
+                    retry_stream.add_audio(chunk, 16000)
                 retry_transcript = retry_stream.stop()
                 text = " ".join(line.text for line in retry_transcript.lines).strip()
 

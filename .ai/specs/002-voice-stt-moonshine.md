@@ -24,10 +24,11 @@ Transcribes user vocal input captured in the browser into text using client-side
    - Model Variant: Defaults to **`medium-streaming`** (`ModelArch.MEDIUM_STREAMING` via `moonshine-voice`) for maximum accuracy and low latency.
    - Initializes and warms up the STT model singleton (`Transcriber`) once during server lifespan startup. Reconstructive per-request ONNX session reloading is strictly avoided.
 
-4. **Dynamic Silence Trimming & Single-Pass Inference**:
+4. **Dynamic Silence Trimming & Chunked Streaming Ingestion**:
    - **Dynamic Silence Trimming**: Executes dynamic silence trimming with adaptive RMS thresholding and 250ms pre/post margin before inference. Eliminates Moonshine decoder `EOS` (token `2`) early-termination caused by leading silence $\ge 2.0$s.
-   - **Single-Pass Inference**: Transcribes complete audio utterances directly in a single inference pass. Arbitrary mid-speech chunk slicing (e.g. at 8s) is forbidden as it breaks active phonemes and causes token dropouts.
-   - **Fallback Retry**: Performs peak-normalized retry (`(audio / peak) * 0.95`) if an audible utterance ($\text{RMS} > 0.01$) yields an empty decoded string.
+   - **1-Second Chunked Audio Feeding**: Feeds the silence-trimmed audio to the Moonshine streaming session (`stream.add_audio`) in discrete 1-second frames (`chunk_size = 16000` samples at 16kHz). Ingesting in 1s frames prevents streaming decoder buffer desynchronization and empty transcripts that can occur when passing a single monolithic multi-second buffer.
+   - **Single-Pass Inference**: Transcribes complete audio utterances directly within a single streaming session without arbitrary mid-speech splitting across separate requests.
+   - **Fallback Retry**: Performs peak-normalized retry (`(audio / peak) * 0.95`) with 1-second chunked feeding if an audible utterance ($\text{RMS} > 0.01$) yields an empty decoded string.
    - Limits single utterances to 60 seconds maximum.
 
 5. **UI & Response State Handling**:
