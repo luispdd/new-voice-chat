@@ -25,7 +25,12 @@ from apps.backend.db.mongo import (
 from apps.backend.services.stt import transcribe_audio, get_stt_model
 from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, split_into_sentences, sanitize_for_tts
 from apps.backend.services.llm import stream_chat_completion, generate_chat_completion, SYSTEM_PROMPT
-from apps.backend.services.rag import ingest_document, search_relevant_chunks
+from apps.backend.services.rag import (
+    ingest_document,
+    search_relevant_chunks,
+    session_has_documents,
+    get_session_documents,
+)
 
 
 @asynccontextmanager
@@ -81,7 +86,6 @@ class ChatRequest(BaseModel):
     session_id: str
     text: str
     stream: Optional[bool] = False
-    with_rag: Optional[bool] = False
 
 
 class IngestDocRequest(BaseModel):
@@ -182,10 +186,10 @@ async def chat(req: ChatRequest):
     # Fetch past message history for context
     history = await get_messages(req.session_id, limit=settings.llm_history_limit)
 
-    # Optional RAG context retrieval
+    # Auto-RAG: inject document context when session has attached documents
     system_prompt = SYSTEM_PROMPT
-    if req.with_rag:
-        relevant_chunks = await search_relevant_chunks(req.text)
+    if await session_has_documents(req.session_id):
+        relevant_chunks = await search_relevant_chunks(req.text, session_id=req.session_id)
         if relevant_chunks:
             context_str = "\n\n".join([f"[{c['title']}]: {c['text']}" for c in relevant_chunks])
             system_prompt = f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
@@ -220,6 +224,46 @@ async def add_document(req: IngestDocRequest):
     return {"status": "ingested", "document": doc}
 
 
+@app.post("/api/sessions/{session_id}/documents")
+async def upload_session_document(session_id: str, file: UploadFile = File(...)):
+    """Attach a .txt or .md file to a chat session for RAG context."""
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    filename = file.filename or "untitled.txt"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("txt", "md"):
+        raise HTTPException(status_code=400, detail="Only .txt and .md files are supported")
+
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be valid UTF-8 text")
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    doc = await ingest_document(title=filename, content=content, session_id=session_id)
+    return {
+        "status": "ingested",
+        "document": {
+            "_id": doc["_id"],
+            "title": doc["title"],
+            "session_id": session_id,
+            "chunk_count": len(doc.get("chunks", [])),
+        },
+    }
+
+
+@app.get("/api/sessions/{session_id}/documents")
+async def list_session_documents(session_id: str):
+    """List documents attached to a chat session."""
+    docs = await get_session_documents(session_id)
+    return {"documents": docs}
+
+
 # WebSocket Streaming Endpoint
 
 async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, user_text: str):
@@ -233,7 +277,15 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
         # Stream LLM tokens and accumulate for sentence-level TTS
         history = await get_messages(session_id, limit=settings.llm_history_limit)
 
-        async for token in stream_chat_completion(history, system_prompt=SYSTEM_PROMPT):
+        # Auto-RAG: inject document context when session has attached documents
+        system_prompt = SYSTEM_PROMPT
+        if await session_has_documents(session_id):
+            relevant_chunks = await search_relevant_chunks(user_text, session_id=session_id)
+            if relevant_chunks:
+                context_str = "\n\n".join([f"[{c['title']}]: {c['text']}" for c in relevant_chunks])
+                system_prompt = f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
+
+        async for token in stream_chat_completion(history, system_prompt=system_prompt):
             full_reply += token
             sentence_buffer += token
             await websocket.send_json({"type": "token", "token": token})

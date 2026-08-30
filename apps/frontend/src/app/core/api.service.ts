@@ -18,6 +18,12 @@ export interface Message {
   is_error?: boolean;
 }
 
+export interface SessionDocument {
+  _id: string;
+  title: string;
+  session_id: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -109,6 +115,28 @@ export class ApiService {
       body: formData.toString(),
     });
     return res.blob();
+  }
+
+  // Session Documents
+
+  async uploadDocument(sessionId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    const res = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/documents`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json();
+  }
+
+  async getSessionDocuments(sessionId: string): Promise<SessionDocument[]> {
+    const res = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/documents`);
+    const data = await res.json();
+    return data.documents || [];
   }
 
   // WebSocket Connection

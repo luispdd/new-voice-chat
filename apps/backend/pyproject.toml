@@ -21,6 +21,7 @@ dependencies = [
     "uvicorn>=0.34.0",
     "watchfiles>=1.2.0",
     "websockets>=15.0",
+    "fastembed>=0.4.0",
 ]
 
 [build-system]
@@ -29,3 +30,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

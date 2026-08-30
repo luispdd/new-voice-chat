@@ -1,0 +1,58 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<HTML>
+<HEAD>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<TITLE>WavSource: Dead Link Report</TITLE>
+<script type="text/javascript"><!--
+if (top.frames.length!=0) {top.location=self.document.location};
+//-->
+</script>
+<script type="text/javascript" src="/js/ga.js"></script>
+</HEAD>
+<BODY TEXT="white" BGCOLOR="black" LINK="#0099FF" VLINK="#CC3399" ALINK="#FF0000">
+<center>
+<!-- &nbsp;<br> -->
+<p style="margin-bottom: 0">
+<a href="/"><IMG SRC="/logos/wslogo_bigdark.gif" BORDER=0 title=" WavSource Main Menu " alt=""></a>
+<br><br><br>
+<font color="#CCCCCC" size="6" face="Tahoma"><b>You clicked on a dead or obsolete link.</b></font></p>
+<div style="text-align:center"><table border=0 width="40%" align="center">
+<tr><td width="100%" style="text-align:left"><p style="margin-top:30px; margin-bottom:20px"><font color="#CCCCCC" size="4" face="Tahoma"><b>
+<u><font color="yellow">Potential Solution 1:</u></font>
+<br>Go back to the WavSource page you were viewing and try refreshing the page.
+A forced refresh (CTRL-F5 with Windows, or Command-Shift-R with Mac) might be necessary.<br><br>
+<u><font color="yellow">Potential Solution 2:</u></font>
+<br>Make sure you're <i>not&nbsp;</i> viewing a search engine's
+cached version of a WavSource page. A cached version of WavSource will likely contain
+obsolete links. Click <a href="/">here</a> to enter
+WavSource through the front door.<br><br>
+<u><font color="yellow">Potential Solution 3 (for Mac users):</u></font>
+<br>Macintosh computers using Safari or Microsoft Internet Explorer
+sometimes have trouble interpreting the JavaScript code used on WavSource
+pages. These problems seem to disappear with <a href="http://www.mozilla.org/products/firefox/all.html">Firefox</a> or <a href="https://www.google.com/chrome/browser/">Chrome</a>.</p>
+<p style="margin-top: 30; margin-bottom: 8">If those suggestions didn't work, please send
+a notification via email to</p>
+<p style="margin-top: 0; margin-bottom: 0" align="center">
+<script type="text/javascript"><!--
+emailE='wavsource.com?subject=Dead Link Report'
+emailE=('webmaster'+'@'+emailE)
+document.write('<A href="mailto:'+emailE+'">'+'this address</a>')
+//-->
+</script>
+<NOSCRIPT>
+<img src="/logos/address.gif">
+</NOSCRIPT>
+</p>
+<p style="margin-top:8px; margin-bottom:20px" align="left">to report the dead link. <u>Remember to
+tell me the page you were viewing and which link you clicked.</u></p>
+</b></font><p style="margin-top: 30; margin-bottom: 20"><b><font color="#CCCCCC" size="4" face="Tahoma">Hit
+the Back button above to return to the page you were viewing or click
+<a href="/">here</a> for the WavSource main menu. Dead links are repaired as soon as possible.</font></b></p>
+<p style="margin-top:10px; margin-bottom:0px" align="center"><b><font color="#00FF00" size="4" face="Tahoma">
+-&gt;&nbsp; Your Faithful Webmaster&nbsp; &lt;-</font></b>
+<br><br><br>
+<font face="Verdana,Tahoma" size=2><b>visitors since July 1, 2001:<br>
+<script type="text/javascript" src="/js/counter-b.js"></script>
+<br><br></td></tr></table></div></center>
+</BODY>
+</html>
