@@ -40,11 +40,13 @@ Provides text-based conversation capabilities supporting real-time token streami
 - `GET /api/sessions`: List user sessions sorted by `last_active` descending.
 - `POST /api/sessions`: Create a new session `{ title?: string, user_id?: string }`.
 - `PATCH /api/sessions/{session_id}`: Update session metadata `{ title: string }`.
-- `DELETE /api/sessions/{session_id}`: Cascade deletion of session and its messages.
+- `DELETE /api/sessions/{session_id}`: Cascade deletion of session, its messages, and attached documents.
 - `GET /api/sessions/{session_id}/messages`: Fetch chronological messages for session.
 - `POST /api/chat`:
-  - Request: `{ session_id: string, text: string, stream?: boolean, with_rag?: boolean }`
+  - Request: `{ session_id: string, text: string, stream?: boolean }`
+  - Context Injection: Automatically retrieves and injects knowledge chunks when the target session has attached documents.
   - Response: `{ reply: string, message: Message }` or SSE stream of `{ token: string }`.
 - `WebSocket /ws/chat`:
   - Inbound: `{ type: "text", session_id: string, text: string }`
+  - Context Injection: Automatically retrieves and injects knowledge chunks when the target session has attached documents.
   - Outbound: `{ type: "token", token: string }`, `{ type: "done", full_text: string }`
