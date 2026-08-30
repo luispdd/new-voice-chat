@@ -28,9 +28,14 @@ export interface SessionDocument {
   providedIn: 'root',
 })
 export class ApiService {
-  // Use current host origin or default port 8000
-  private baseUrl = window.location.protocol + '//' + window.location.hostname + ':8000';
-  private wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.hostname + ':8000/ws/chat';
+  // Use port 8000 directly only in local dev (port 4200); otherwise use relative/reverse-proxied paths
+  private isDev = window.location.port === '4200';
+  private baseUrl = this.isDev
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : '';
+  private wsUrl = this.isDev
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/chat`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat`;
   private ws: WebSocket | null = null;
   private _wsMessage = signal<any>(null);
   readonly wsMessage = this._wsMessage.asReadonly();

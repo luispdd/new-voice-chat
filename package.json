@@ -8,8 +8,10 @@
     "test": "bunx nx test frontend",
     "backend": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py",
     "backend:dev": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py --reload",
-    "docker:up": "docker compose up -d mongodb",
-    "docker:down": "docker compose down"
+    "docker:db:up": "docker compose up -d mongodb",
+    "docker:db:down": "docker compose down",
+    "docker:stack:up": "docker compose -f docker-compose.prod.yml up --build -d",
+    "docker:stack:down": "docker compose -f docker-compose.prod.yml down"
   },
   "dependencies": {
     "@angular/animations": "^20.0.0",

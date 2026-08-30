@@ -41,7 +41,7 @@ uv sync --project apps/backend
 
 ### 3. Spin Up the Database
 ```bash
-bun run docker:up
+bun run docker:db:up
 ```
 *(This command runs `docker compose up -d mongodb` in the background).*
 
@@ -53,7 +53,7 @@ For a fully functioning local developer environment, run these three components 
 
 ### 1. Start MongoDB (if not already running)
 ```bash
-bun run docker:up
+bun run docker:db:up
 ```
 
 ### 2. Run the FastAPI Backend (Dev Mode with SSL)
@@ -96,7 +96,10 @@ bun start
 | Command | Action |
 | :--- | :--- |
 | `bun run build` | Build the frontend production assets |
-| `bun run docker:down` | Stop and remove the MongoDB container |
+| `bun run docker:db:up` | Start the local MongoDB container (dev) |
+| `bun run docker:db:down` | Stop the local MongoDB container (dev) |
+| `bun run docker:stack:up` | Build & start entire stack (MongoDB + Backend + Frontend HTTPS) |
+| `bun run docker:stack:down` | Stop and tear down the full stack |
 
 ---
 

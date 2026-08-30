@@ -14,4 +14,9 @@ Web browsers mandate a Secure Context (`https://` or `localhost`) to grant micro
 3. **Frontend Server SSL**:
    - Angular dev server in `apps/frontend/project.json` configured with `ssl: true`, `sslCert: "cert.pem"`, `sslKey: "key.pem"` on port 4200.
 4. **LAN Mobile / Tablet Access**:
-   - Allows phones, tablets, and other computers on the local network to open `https://<LAN_IP>:4200` and speak through the microphone.
+   - Allows phones, tablets, and other computers on the local network to open `https://<LAN_IP>:4200` (dev) or `https://<LAN_IP>` (prod) and speak through the microphone.
+5. **Production Nginx SSL Proxy**:
+   - Nginx server terminates SSL on port 443 using `/etc/nginx/certs/cert.pem` and `/etc/nginx/certs/key.pem`.
+   - Enforces automatic HTTP-to-HTTPS 301 redirection on port 80.
+   - Reverse proxies `/api/` REST and `/ws/` WebSocket traffic to the internal Python backend container (`http://backend:8000/`).
+
