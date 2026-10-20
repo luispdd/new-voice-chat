@@ -1,80 +1,37 @@
-"""Speech-to-Text (STT) service utilizing Moonshine Voice."""
+"""Speech-to-Text (STT) service utilizing whisper.cpp (Whisper small, ggml)."""
 
 import io
-from typing import Optional, Tuple
+import re
+from typing import Optional
 import numpy as np
 import soundfile as sf
 from pydub import AudioSegment
-from moonshine_voice import (
-    ModelArch,
-    Transcriber,
-    get_model_for_language,
-    string_to_model_arch,
-)
+from pywhispercpp.model import Model
 from apps.backend.config import settings
 
-_stt_model: Optional[Transcriber] = None
+_stt_model: Optional[Model] = None
 
 
-def resolve_model_arch(model_name: str) -> Tuple[str, ModelArch]:
-    """
-    Resolve language tag and ModelArch enum from model name string.
-
-    Canonical Moonshine Voice architectures:
-      - 'medium-streaming' -> ('en', ModelArch.MEDIUM_STREAMING)
-      - 'small-streaming'  -> ('en', ModelArch.SMALL_STREAMING)
-      - 'base-streaming'   -> ('en', ModelArch.BASE_STREAMING)
-      - 'tiny-streaming'   -> ('en', ModelArch.TINY_STREAMING)
-      - 'base'             -> ('en', ModelArch.BASE)
-      - 'tiny'             -> ('en', ModelArch.TINY)
-    """
-    cleaned = model_name.strip().lower()
-    if "/" in cleaned:
-        cleaned = cleaned.split("/")[-1]
-
-    lang = "en"
-    if cleaned in ("small", "small-streaming", "streaming-small", "moonshine-streaming-small"):
-        arch = ModelArch.SMALL_STREAMING
-    elif cleaned in ("tiny-streaming", "streaming-tiny", "moonshine-streaming-tiny"):
-        arch = ModelArch.TINY_STREAMING
-    elif cleaned in ("medium", "medium-streaming", "streaming-medium", "moonshine-streaming-medium"):
-        arch = ModelArch.MEDIUM_STREAMING
-    elif cleaned in ("base-streaming", "streaming-base", "moonshine-streaming-base", "moonshine-streaming"):
-        arch = ModelArch.BASE_STREAMING
-    elif cleaned in ("base", "moonshine-base"):
-        arch = ModelArch.BASE
-    elif cleaned in ("tiny", "moonshine-tiny"):
-        arch = ModelArch.TINY
-    else:
-        try:
-            arch = string_to_model_arch(cleaned)
-        except ValueError:
-            print(f"⚠️ Unknown STT model architecture '{model_name}', defaulting to MEDIUM_STREAMING")
-            arch = ModelArch.MEDIUM_STREAMING
-
-    return lang, arch
-
-
-def get_stt_model() -> Transcriber:
-    """Warmup and initialize Moonshine Transcriber singleton."""
+def get_stt_model() -> Model:
+    """Warmup and initialize whisper.cpp Model singleton."""
     global _stt_model
     if _stt_model is None:
-        lang, arch = resolve_model_arch(settings.stt_model_name)
-        print(f"📦 Initializing Moonshine STT Model ({settings.stt_model_name} -> {arch.name})...")
-        model_path, model_arch = get_model_for_language(lang, arch)
-        _stt_model = Transcriber(model_path, model_arch)
-
-        # Warmup inference
-        dummy = [0.0] * 16000
+        print(f"📦 Initializing Whisper STT Model ({settings.stt_model_name})...")
+        _stt_model = Model(settings.stt_model_name, print_progress=False, print_realtime=False)
         try:
-            stream = _stt_model.create_stream()
-            stream.start()
-            stream.add_audio(dummy, 16000)
-            stream.stop()
-            print(f"✅ Moonshine STT Model ({arch.name}) initialized and warmed up.")
+            _stt_model.transcribe(np.zeros(16000, dtype=np.float32))
         except Exception as e:
             print(f"⚠️ STT warmup info: {e}")
+        print(f"✅ Whisper STT Model ({settings.stt_model_name}) initialized.")
     return _stt_model
+
+
+def _run_whisper(model: Model, audio: np.ndarray) -> str:
+    segments = model.transcribe(audio.astype(np.float32), no_context=True)
+    text = " ".join(s.text.strip() for s in segments)
+    # Drop non-speech tags such as [BLANK_AUDIO], (music), [ Silence ]
+    text = re.sub(r"\[[^\]]*\]|\([^)]*\)", "", text)
+    return " ".join(text.split())
 
 
 def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
@@ -208,30 +165,13 @@ def transcribe_audio(audio_bytes: bytes) -> str:
 
     # Direct transcription of speech sequence
     try:
-        stream = model.create_stream()
-        stream.start()
-        
-        # Feed audio in 1-second chunks to ensure streaming decoder stability
-        chunk_size = 16000
-        for i in range(0, len(trimmed_audio), chunk_size):
-            chunk = trimmed_audio[i:i + chunk_size].tolist()
-            stream.add_audio(chunk, 16000)
-            
-        transcript = stream.stop()
-        text = " ".join(line.text for line in transcript.lines).strip()
+        text = _run_whisper(model, trimmed_audio)
 
         # Retry fallback with peak normalization if result is empty on audible speech
         if not text and float(np.sqrt(np.mean(trimmed_audio**2))) > 0.01:
             peak = float(np.max(np.abs(trimmed_audio)))
             if peak > 0:
-                normalized_audio = (trimmed_audio / peak) * 0.95
-                retry_stream = model.create_stream()
-                retry_stream.start()
-                for i in range(0, len(normalized_audio), chunk_size):
-                    chunk = normalized_audio[i:i + chunk_size].tolist()
-                    retry_stream.add_audio(chunk, 16000)
-                retry_transcript = retry_stream.stop()
-                text = " ".join(line.text for line in retry_transcript.lines).strip()
+                text = _run_whisper(model, (trimmed_audio / peak) * 0.95)
 
         print(f"[STT Diagnostics] Decoded Text: '{text}'")
         return text

@@ -1,6 +1,6 @@
 # Voice Chat Project Setup & Walkthrough
 
-The Voice Chat application has been generated and verified with an **NX Monorepo**, **Angular 22 + PrimeNG** frontend, **FastAPI (Python 3.13 via `uv`)** backend, **Moonshine ONNX STT**, **Piper TTS** with HuggingFace Hub voice caching, and **Docker Compose MongoDB**.
+The Voice Chat application has been generated and verified with an **NX Monorepo**, **Angular 22 + PrimeNG** frontend, **FastAPI (Python 3.13 via `uv`)** backend, **Whisper (whisper.cpp) STT**, **Piper TTS** with HuggingFace Hub voice caching, and **Docker Compose MongoDB**.
 
 ---
 
@@ -15,7 +15,7 @@ new-voice-chat/
 │   │   ├── db/
 │   │   │   └── mongo.py             # Motor async MongoDB ODM & collections
 │   │   ├── services/
-│   │   │   ├── stt.py               # Moonshine ONNX Speech-to-Text engine
+│   │   │   ├── stt.py               # whisper.cpp Speech-to-Text engine
 │   │   │   ├── tts.py               # Piper TTS sentence-boundary synthesizer
 │   │   │   ├── llm.py               # OpenAI SDK client (LM Studio / Ollama / OpenRouter)
 │   │   │   └── rag.py               # MongoDB document ingestion & search
@@ -55,7 +55,7 @@ new-voice-chat/
    * Running healthy in Docker on port `27017` with persistent volume `voice_chat_mongodb_data`.
 2. **Backend Services Tested**:
    * **Piper TTS**: Successfully verified with `hf_hub_download` downloading `rhasspy/piper-voices` and synthesizing 22050Hz 16-bit PCM WAV audio.
-   * **Moonshine ONNX STT**: Verified loading model weights and transcribing speech audio.
+   * **Whisper (whisper.cpp) STT**: Verified loading model weights and transcribing speech audio.
    * **MongoDB CRUD**: Verified async creation, reading, and cleanup of chat sessions and messages.
 3. **Frontend Build**:
    * Angular 22 standalone app built with `bunx nx build frontend` without any compilation errors.

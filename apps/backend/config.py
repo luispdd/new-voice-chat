@@ -55,8 +55,8 @@ class Settings(BaseModel):
 
     # STT Settings
     stt_model_name: str = Field(
-        default=os.getenv("STT_MODEL_NAME", "medium-streaming"),
-        description="Moonshine STT model variant: medium-streaming, small-streaming, base-streaming, tiny-streaming, base, tiny",
+        default=os.getenv("STT_MODEL_NAME", "small.en"),
+        description="Whisper.cpp ggml model name or path (e.g. small.en, small)",
     )
 
     # TTS Settings
@@ -97,8 +97,8 @@ def get_settings() -> Settings:
     parser.add_argument(
         "--stt-model",
         type=str,
-        default=os.getenv("STT_MODEL_NAME", "medium-streaming"),
-        help="Moonshine STT model variant: medium-streaming, small-streaming, base-streaming, tiny-streaming, base, tiny",
+        default=os.getenv("STT_MODEL_NAME", "small.en"),
+        help="Whisper.cpp ggml model name or path (e.g. small.en, small)",
     )
     parser.add_argument(
         "--history-limit",
@@ -133,8 +133,14 @@ def get_settings() -> Settings:
             model = "google/gemma-3-4b-it-qat"
 
     api_key = args.api_key or os.getenv("LLM_API_KEY", "not-needed")
+    if engine == "openai" and "api.openai.com" in base_url and api_key == "not-needed":
+        print(
+            "⚠️  Engine 'openai' targets https://api.openai.com/v1 with no API key. "
+            "For a local OpenAI-compatible server, pass --base-url (e.g. http://127.0.0.1:1234/v1); "
+            "for real OpenAI, pass --api-key."
+        )
     mongo_uri = args.mongo_uri or os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", "medium-streaming")
+    stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", "small.en")
 
     return Settings(
         host=args.host,

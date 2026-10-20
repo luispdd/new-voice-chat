@@ -1,9 +1,9 @@
-# Spec 002: Speech-to-Text (STT) with Moonshine ONNX & AudioWorklet VAD
+# Spec 002: Speech-to-Text (STT) with Whisper small (whisper.cpp) & AudioWorklet VAD
 
 ## Status: Implemented & Verified
 
 ## Overview
-Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) via modern `AudioWorkletNode` and backend Moonshine ONNX (`medium-streaming` via `moonshine-voice`) with persistent model session caching and dynamic silence trimming.
+Transcribes user vocal input captured in the browser into text using client-side Voice Activity Detection (VAD) via modern `AudioWorkletNode` and backend Whisper small (`small.en` via `pywhispercpp`) with persistent model session caching and dynamic silence trimming.
 
 ## Requirements
 

@@ -17,11 +17,10 @@
 ## Key Patterns
 1. **Piper Model Manager**: Download voice models via `hf_hub_download` from `rhasspy/piper-voices` with optimized ONNX thread sessions (`intra_op_num_threads=2`, `inter_op_num_threads=2`).
 2. **STT Service Architecture**:
-   - Always initialize and warm up `Transcriber` singleton (default `medium-streaming` / `MEDIUM_STREAMING`) once in lifespan startup to avoid per-request model reloading.
+   - Always initialize and warm up the `pywhispercpp` `Model` singleton (default `small.en`, ggml) once in lifespan startup to avoid per-request model reloading.
    - Decode raw audio payloads via `pydub.AudioSegment.from_file` normalized to 16kHz mono `float32` arrays in `[-1.0, 1.0]` with DC offset removal.
-   - Always run `trim_silence()` before Moonshine inference to strip leading/trailing silence with 250ms padding. Moonshine decoder early-terminates with `EOS` (empty string) if audio begins with $\ge 2$s of silence.
-   - Feed audio to `stream.add_audio()` in 1-second frames (`chunk_size = 16000` samples at 16kHz) to ensure streaming decoder state stability and prevent dropouts, before calling `stream.stop()`.
-   - Pass the full utterance directly within a single streaming session without artificial mid-speech slicing across requests.
+   - Run `trim_silence()` before inference to strip leading/trailing silence with 250ms padding.
+   - Transcribe the full utterance in a single `Model.transcribe` call and strip non-speech tags such as `[BLANK_AUDIO]` from the output.
 3. **Sentence-Level TTS Streaming**: Split incoming LLM token stream at sentence boundaries (`. ! ? \n`) and synthesize audio sentence-by-sentence to achieve low Time-to-First-Audio (TTFA).
 4. **Lifespan Warmup**: Always warm up DB connections, tokenizer, and voice models in FastAPI's `lifespan` handler.
 5. **Development Reload & CPU Optimization**:

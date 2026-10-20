@@ -23,13 +23,13 @@ This repository follows the **Spec-Driven Development (SDD)** methodology. All a
 ```
 .ai/
 ├── instructions/            # Reusable implementation instructions
-│   ├── backend-python.md    # FastAPI, Python 3.13, uv, Moonshine STT, Piper TTS
+│   ├── backend-python.md    # FastAPI, Python 3.13, uv, Whisper (whisper.cpp) STT, Piper TTS
 │   ├── frontend-angular.md  # Angular 22, PrimeNG, Web Audio VAD & Playback Queue
 │   ├── nx-monorepo.md       # NX monorepo, Bun workspaces, generators, and caching
 │   └── testing-strategy.md  # Container health, neural models, build and audio smoke tests
 ├── specs/                   # Single source of truth specifications
 │   ├── 001-core-text-chat.md             # LLM streaming & multi-provider engine
-│   ├── 002-voice-stt-moonshine.md        # Web Audio VAD & Moonshine ONNX STT
+│   ├── 002-voice-stt-moonshine.md        # Web Audio VAD & Whisper small STT (whisper.cpp)
 │   ├── 003-voice-tts-piper.md            # Piper TTS & sentence streaming synthesis
 │   ├── 004-session-persistence-mongo.md  # MongoDB collections & Motor async driver
 │   ├── 005-rag-knowledge-retrieval.md    # Document ingestion & knowledge retrieval

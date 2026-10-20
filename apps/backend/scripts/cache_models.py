@@ -20,15 +20,15 @@ def cache_all_models():
     except Exception as e:
         print(f"⚠️ Failed to cache Piper TTS voice model: {e}")
 
-    # 2. Moonshine Voice STT Models
+    # 2. Whisper (whisper.cpp) STT Model
     try:
-        from moonshine_voice import ModelArch, get_model_for_language
+        from pywhispercpp.model import Model
 
-        print("📥 Caching Moonshine STT model (medium-streaming)...")
-        get_model_for_language("en", ModelArch.MEDIUM_STREAMING)
-        print("✅ Moonshine STT model cached.")
+        print("📥 Caching Whisper STT model (small.en)...")
+        Model("small.en")
+        print("✅ Whisper STT model cached.")
     except Exception as e:
-        print(f"⚠️ Failed to cache Moonshine STT model: {e}")
+        print(f"⚠️ Failed to cache Whisper STT model: {e}")
 
     # 3. FastEmbed RAG Embedding Model
     try:

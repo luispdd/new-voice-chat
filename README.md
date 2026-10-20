@@ -8,7 +8,7 @@ An offline-first, low-latency, real-time voice chat application combining a mode
 
 *   **Zoneless Frontend (Angular 22 + PrimeNG)**: Built using clean standalone components, reactive signals, dynamic RMS volume visualizer, and a custom browser `AudioContext` playback queue.
 *   **Real-time Voice VAD**: Browser-based Web Audio Voice Activity Detection (VAD) that captures mic input and automatically sends WAV chunks to the backend on silence.
-*   **Fast Neural Speech-to-Text (STT)**: In-memory transcription using `useful-moonshine-onnx` (Moonshine ONNX Tiny) on the local host.
+*   **Fast Neural Speech-to-Text (STT)**: In-memory transcription using `pywhispercpp` (Whisper small.en, whisper.cpp) on the local host.
 *   **Streaming Text-to-Speech (TTS)**: Low Time-to-First-Audio (TTFA) sentence-boundary streaming synthesis using `piper-tts` (Rhasspy Piper voice models) to respond with voice dynamically.
 *   **Vector Search & RAG**: MongoDB persistent sessions, chat history, and embedded semantic search/RAG capabilities using local ONNX embeddings (`fastembed`).
 *   **Multi-Provider LLM Integration**: Native support for Ollama, LM Studio, OpenAI API, and OpenRouter.
