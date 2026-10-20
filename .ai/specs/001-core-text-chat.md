@@ -29,7 +29,7 @@ Provides text-based conversation capabilities supporting real-time token streami
    - The conversations should be displayed in the sidebar.
    - The user can switch between conversations.
    - The user can view the conversation history.
-   - **Context Window History**: The backend retrieves up to the latest **50 messages** (`limit=50`, ~25 conversational turns) from the active session to form the LLM conversation prompt context, optimizing memory retention while preserving low latency and staying within model context windows.
+   - **Context Window History**: The backend retrieves up to the latest **100 messages** (`limit=100`, ~50 conversational turns) from the active session to form the LLM conversation prompt context, optimizing memory retention while preserving low latency and staying within model context windows.
 6. **UI**:
    - The user can switch between conversations.
    - The user can view the conversation history.

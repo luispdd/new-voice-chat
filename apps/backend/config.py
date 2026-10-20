@@ -49,7 +49,7 @@ class Settings(BaseModel):
         description="Target model identifier",
     )
     llm_history_limit: int = Field(
-        default=int(os.getenv("LLM_HISTORY_LIMIT", "50")),
+        default=int(os.getenv("LLM_HISTORY_LIMIT", "100")),
         description="Maximum number of past messages to send in LLM prompt context",
     )
 
@@ -103,7 +103,7 @@ def get_settings() -> Settings:
     parser.add_argument(
         "--history-limit",
         type=int,
-        default=int(os.getenv("LLM_HISTORY_LIMIT", "50")),
+        default=int(os.getenv("LLM_HISTORY_LIMIT", "100")),
         help="Maximum past messages to send in LLM prompt context",
     )
 

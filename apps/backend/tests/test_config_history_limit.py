@@ -8,7 +8,7 @@ from apps.backend.config import Settings, get_settings
 class TestLLMHistoryLimitConfig(unittest.TestCase):
     def test_default_history_limit(self):
         settings = Settings()
-        self.assertEqual(settings.llm_history_limit, 50)
+        self.assertEqual(settings.llm_history_limit, 100)
 
     def test_custom_history_limit_in_settings(self):
         settings = Settings(llm_history_limit=80)

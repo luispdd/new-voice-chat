@@ -118,10 +118,12 @@ async def add_message(
 
 async def get_messages(session_id: str, limit: int = 100) -> list[dict[str, Any]]:
     db = get_db()
-    cursor = db.messages.find({"session_id": session_id}).sort("timestamp", 1).limit(limit)
+    # Fetch the most recent `limit` messages, then restore chronological order
+    cursor = db.messages.find({"session_id": session_id}).sort("timestamp", -1).limit(limit)
     messages = []
     async for m in cursor:
         messages.append(m)
+    messages.reverse()
     return messages
 
 
