@@ -1,4 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { ApiService } from './api.service';
 import { AudioPlaybackService } from './audio-playback.service';
 
 @Injectable({
@@ -6,6 +7,7 @@ import { AudioPlaybackService } from './audio-playback.service';
 })
 export class AudioRecordService {
   private audioPlayback = inject(AudioPlaybackService);
+  private api = inject(ApiService);
 
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
@@ -19,14 +21,19 @@ export class AudioRecordService {
   private _audioLevel = signal<number>(0);
   readonly audioLevel = this._audioLevel.asReadonly();
 
-  private _audioChunk = signal<Blob | null>(null);
-  readonly audioChunk = this._audioChunk.asReadonly();
+  /** Incremented each time an utterance ends and `audio_end` has been sent to the backend. */
+  private _utteranceEnded = signal<number>(0);
+  readonly utteranceEnded = this._utteranceEnded.asReadonly();
 
   private _speechDetected = signal<number>(0);
   readonly speechDetected = this._speechDetected.asReadonly();
 
-  private audioChunks: Float32Array[] = [];
+  private chunkCount = 0;
   private sampleRate = 16000;
+
+  // Streaming: microphone audio is sent to the backend in ~100 ms PCM frames while the user speaks
+  private pendingFrames: Float32Array[] = [];
+  private pendingSamples = 0;
 
   // VAD parameters
   private vadActive = false;
@@ -36,6 +43,10 @@ export class AudioRecordService {
   private consecutiveSpeechFrames = 0;
   private lastUtteranceEndTime = 0;
   private readonly silenceDurationMs = 1500;
+  // Pause hint: after this much silence the backend starts a speculative transcription
+  private readonly pauseHintMs = 700;
+  private pauseTimer: any = null;
+  private pauseSent = false;
 
   get isRecordingActive(): boolean {
     return this._isRecording();
@@ -66,7 +77,9 @@ export class AudioRecordService {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 0; // Mute gain node to prevent mic input echoing to speakers
 
-      this.audioChunks = [];
+      this.chunkCount = 0;
+      this.pendingFrames = [];
+      this.pendingSamples = 0;
       this.vadActive = false;
       this._isRecording.set(true);
 
@@ -142,25 +155,44 @@ export class AudioRecordService {
         if (!this.vadActive) {
           this.vadActive = true;
           this._speechDetected.update((c) => c + 1);
-          // Prepend pre-roll chunks so initial consonants/phonemes are fully preserved
-          this.audioChunks = [...preRollChunks, chunk];
+          // Announce the utterance, then stream pre-roll chunks so initial consonants/phonemes are preserved
+          this.api.sendWsMessage({ type: 'audio_start', sample_rate: this.sampleRate });
+          this.pauseSent = false;
+          this.chunkCount = 0;
+          this.pendingFrames = [];
+          this.pendingSamples = 0;
+          for (const preRoll of preRollChunks) {
+            this.queueFrame(preRoll);
+          }
           preRollChunks.length = 0;
+          this.queueFrame(chunk);
         } else {
-          this.audioChunks.push(chunk);
+          this.queueFrame(chunk);
         }
 
         if (this.silenceTimer) {
           clearTimeout(this.silenceTimer);
           this.silenceTimer = null;
         }
+        this.clearPauseHint(true);
       }
     } else {
       this.consecutiveSpeechFrames = 0;
       if (this.vadActive) {
-        this.audioChunks.push(chunk);
+        this.queueFrame(chunk);
+        if (!this.pauseTimer && !this.pauseSent) {
+          this.pauseTimer = setTimeout(() => {
+            this.pauseTimer = null;
+            if (this.vadActive) {
+              this.flushFrames();
+              this.api.sendWsMessage({ type: 'audio_pause' });
+              this.pauseSent = true;
+            }
+          }, this.pauseHintMs);
+        }
         if (!this.silenceTimer) {
           this.silenceTimer = setTimeout(() => {
-            if (this.vadActive && this.audioChunks.length > 5) {
+            if (this.vadActive && this.chunkCount > 5) {
               this.finishUtterance();
             }
           }, this.silenceDurationMs);
@@ -175,6 +207,59 @@ export class AudioRecordService {
     }
   }
 
+  /** Cancel a pending pause hint; if one was already sent, tell the backend speech resumed. */
+  private clearPauseHint(notifyResume: boolean): void {
+    if (this.pauseTimer) {
+      clearTimeout(this.pauseTimer);
+      this.pauseTimer = null;
+    }
+    if (this.pauseSent) {
+      this.pauseSent = false;
+      if (notifyResume) {
+        this.flushFrames();
+        this.api.sendWsMessage({ type: 'audio_resume' });
+      }
+    }
+  }
+
+  /** Buffer a chunk and send a binary frame to the backend once ~100 ms of audio is queued. */
+  private queueFrame(chunk: Float32Array): void {
+    this.chunkCount++;
+    this.pendingFrames.push(chunk);
+    this.pendingSamples += chunk.length;
+    if (this.pendingSamples >= this.sampleRate / 10) {
+      this.flushFrames();
+    }
+  }
+
+  private flushFrames(): void {
+    if (this.pendingSamples === 0) return;
+    const pcm = new Int16Array(this.pendingSamples);
+    let offset = 0;
+    for (const frame of this.pendingFrames) {
+      for (let i = 0; i < frame.length; i++) {
+        const s = Math.max(-1, Math.min(1, frame[i]));
+        pcm[offset++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+    }
+    this.pendingFrames = [];
+    this.pendingSamples = 0;
+    this.api.sendWsBinary(pcm.buffer);
+  }
+
+  /** Flush remaining audio and tell the backend the utterance is complete (if it had enough audio). */
+  private endUtterance(): boolean {
+    this.clearPauseHint(false);
+    this.flushFrames();
+    const hadSpeech = this.chunkCount > 5;
+    this.chunkCount = 0;
+    if (hadSpeech) {
+      this.api.sendWsMessage({ type: 'audio_end' });
+      this._utteranceEnded.update((c) => c + 1);
+    }
+    return hadSpeech;
+  }
+
   private finishUtterance(): void {
     this.lastUtteranceEndTime = Date.now();
     this.consecutiveSpeechFrames = 0;
@@ -183,21 +268,14 @@ export class AudioRecordService {
       this.silenceTimer = null;
     }
     this.vadActive = false;
-
-    if (this.audioChunks.length > 5) {
-      const wavBlob = this.exportWAV(this.audioChunks, this.sampleRate);
-      this.audioChunks = [];
-      this._audioChunk.set(wavBlob);
-    } else {
-      this.audioChunks = [];
-    }
+    this.endUtterance();
   }
 
-  stopRecording(): Blob | null {
+  stopRecording(): void {
     this.lastUtteranceEndTime = 0;
     this.consecutiveSpeechFrames = 0;
-    if (!this._isRecording() && this.audioChunks.length === 0) {
-      return null;
+    if (!this._isRecording() && this.chunkCount === 0) {
+      return;
     }
 
     this._isRecording.set(false);
@@ -231,66 +309,7 @@ export class AudioRecordService {
 
     this._audioLevel.set(0);
 
-    if (this.audioChunks.length > 5) {
-      const wavBlob = this.exportWAV(this.audioChunks, this.sampleRate);
-      this.audioChunks = [];
-      this._audioChunk.set(wavBlob);
-      return wavBlob;
-    }
-    this.audioChunks = [];
-    return null;
-  }
-
-  private exportWAV(chunks: Float32Array[], sampleRate: number): Blob {
-    let totalLength = 0;
-    for (const chunk of chunks) {
-      totalLength += chunk.length;
-    }
-
-    const merged = new Float32Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // Convert to 16-bit PCM WAV
-    const buffer = new ArrayBuffer(44 + merged.length * 2);
-    const view = new DataView(buffer);
-
-    // RIFF chunk descriptor
-    this.writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + merged.length * 2, true);
-    this.writeString(view, 8, 'WAVE');
-
-    // fmt sub-chunk
-    this.writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true); // byte rate
-    view.setUint16(32, 2, true); // block align
-    view.setUint16(34, 16, true); // bits per sample
-
-    // data sub-chunk
-    this.writeString(view, 36, 'data');
-    view.setUint32(40, merged.length * 2, true);
-
-    // Write samples
-    let index = 44;
-    for (let i = 0; i < merged.length; i++) {
-      const s = Math.max(-1, Math.min(1, merged[i]));
-      view.setInt16(index, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      index += 2;
-    }
-
-    return new Blob([buffer], { type: 'audio/wav' });
-  }
-
-  private writeString(view: DataView, offset: number, string: string): void {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
+    // Send any utterance still in progress so it is not lost when the microphone is toggled off
+    this.endUtterance();
   }
 }

@@ -61,3 +61,34 @@ def load_piper_voice_model(
         config_dict = json.load(f)
 
     return PiperVoice(config=PiperConfig.from_dict(config_dict), session=session)
+
+
+# Parakeet TDT 0.6b v2 (English, INT8) STT model repository settings
+PARAKEET_REPO_ID = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+PARAKEET_FILES = ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+
+
+def load_parakeet_recognizer(repo_id: str = PARAKEET_REPO_ID, num_threads: int = 4):
+    """
+    Load the Parakeet TDT STT recognizer (sherpa-onnx) from HuggingFace Hub.
+
+    Downloads to ~/.cache/huggingface/ if not already cached.
+
+    Returns:
+        A `sherpa_onnx.OfflineRecognizer` ready for decoding 16 kHz mono float32 audio.
+    """
+    import sherpa_onnx  # Imported lazily so TTS-only code paths do not require it
+
+    print(f"📦 Verifying/Downloading Parakeet STT Model ({repo_id})...")
+    paths = {name: hf_hub_download(repo_id=repo_id, filename=name) for name in PARAKEET_FILES}
+
+    return sherpa_onnx.OfflineRecognizer.from_transducer(
+        encoder=paths["encoder.int8.onnx"],
+        decoder=paths["decoder.int8.onnx"],
+        joiner=paths["joiner.int8.onnx"],
+        tokens=paths["tokens.txt"],
+        num_threads=num_threads,
+        provider="cpu",
+        model_type="nemo_transducer",
+    )
+

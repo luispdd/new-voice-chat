@@ -12,11 +12,13 @@ Converts assistant text responses into natural, low-latency spoken audio using P
    - Configure the ONNX Runtime session with optimized thread limits for CPU inference efficiency (`intra_op_num_threads=2`, `inter_op_num_threads=2`) using `CPUExecutionProvider`.
    - Parse JSON configurations via `PiperConfig.from_dict` and instantiate a ready-to-use `PiperVoice` instance.
 2. **Sentence-Boundary Streaming**:
-   - As LLM text tokens stream in, buffer them until a sentence boundary (`[.!?\n]`) is reached.
-   - Synthesize the complete sentence into 22050Hz 16-bit mono WAV bytes.
+   - As LLM text tokens stream in, buffer them until a sentence boundary (`[.!?\n]+\s+`) is reached.
+   - Slices each sentence cleanly while preserving remainder whitespace so tokens across sentence boundaries are never concatenated.
+   - Synthesize each complete sentence into 22050Hz 16-bit mono WAV bytes.
    - Transmit sentence audio chunks immediately over WebSocket `/ws/chat` as base64-encoded payloads (`audio_sentence`).
 3. **Frontend Queue Player & Narration Control**:
-   - Audio playback queue decodes incoming audio chunks using Web Audio `AudioContext`.
+   - Incoming WebSocket events are buffered in a FIFO queue signal (`wsMessages`) in `ApiService` and drained in batch so `audio_sentence` events arriving in rapid succession with `token` events are never dropped or coalesced.
+   - Audio playback queue decodes incoming audio chunks using Web Audio `AudioContext` via a sequential decode promise chain, guaranteeing that audio chunks are decoded and queued in exact chronological order without concurrency races.
    - Queues and plays audio segments seamlessly in sequence without clicks, pops, or noticeable delays.
    - Supports user interrupt / stop playback action.
    - **Toolbar Narration / Mute Toggle**:

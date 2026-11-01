@@ -1,37 +1,50 @@
-"""Speech-to-Text (STT) service utilizing whisper.cpp (Whisper small, ggml)."""
+"""Speech-to-Text (STT) service utilizing Parakeet TDT 0.6b v2 (sherpa-onnx, CPU, English)."""
 
 import io
-import re
-from typing import Optional
+import threading
 import numpy as np
 import soundfile as sf
 from pydub import AudioSegment
-from pywhispercpp.model import Model
+from apps.backend.common.model_manager import load_parakeet_recognizer
 from apps.backend.config import settings
 
-_stt_model: Optional[Model] = None
+SAMPLE_RATE = 16000
+MAX_UTTERANCE_SECONDS = 60
+
+_stt_model = None
+_stt_lock = threading.Lock()  # The recognizer is shared by the WebSocket and REST paths
 
 
-def get_stt_model() -> Model:
-    """Warmup and initialize whisper.cpp Model singleton."""
+def get_stt_model():
+    """Warmup and initialize the Parakeet recognizer singleton."""
     global _stt_model
     if _stt_model is None:
-        print(f"📦 Initializing Whisper STT Model ({settings.stt_model_name})...")
-        _stt_model = Model(settings.stt_model_name, print_progress=False, print_realtime=False)
+        print(f"📦 Initializing Parakeet STT Model ({settings.stt_model_name})...")
+        _stt_model = load_parakeet_recognizer(settings.stt_model_name, settings.stt_num_threads)
         try:
-            _stt_model.transcribe(np.zeros(16000, dtype=np.float32))
+            _decode(_stt_model, np.zeros(SAMPLE_RATE, dtype=np.float32))
         except Exception as e:
             print(f"⚠️ STT warmup info: {e}")
-        print(f"✅ Whisper STT Model ({settings.stt_model_name}) initialized.")
+        print(f"✅ Parakeet STT Model ({settings.stt_model_name}) initialized.")
     return _stt_model
 
 
-def _run_whisper(model: Model, audio: np.ndarray) -> str:
-    segments = model.transcribe(audio.astype(np.float32), no_context=True)
-    text = " ".join(s.text.strip() for s in segments)
-    # Drop non-speech tags such as [BLANK_AUDIO], (music), [ Silence ]
-    text = re.sub(r"\[[^\]]*\]|\([^)]*\)", "", text)
-    return " ".join(text.split())
+def _decode(model, audio: np.ndarray) -> str:
+    with _stt_lock:
+        stream = model.create_stream()
+        stream.accept_waveform(SAMPLE_RATE, audio.astype(np.float32))
+        model.decode_stream(stream)
+        return " ".join(stream.result.text.split())
+
+
+def pcm16_to_float32(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+    """Convert little-endian 16-bit mono PCM bytes to a 16 kHz float32 array."""
+    usable = len(pcm) - (len(pcm) % 2)
+    samples = np.frombuffer(pcm[:usable], dtype="<i2")
+    if sample_rate != SAMPLE_RATE and len(samples) > 0:
+        seg = AudioSegment(samples.tobytes(), frame_rate=sample_rate, sample_width=2, channels=1)
+        samples = np.array(seg.set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+    return samples.astype(np.float32) / 32768.0
 
 
 def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
@@ -84,50 +97,56 @@ def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     return audio_np
 
 
-def trim_silence(
-    audio: np.ndarray,
-    samplerate: int = 16000,
-    frame_duration_ms: int = 30,
-    padding_ms: int = 250,
-) -> np.ndarray:
+def transcribe_pcm(audio_data: np.ndarray) -> str:
     """
-    Trim extended leading and trailing silence from audio to prevent decoder
-    early-termination on long leading pauses.
+    Transcribe a 16 kHz mono float32 array into text.
+
+    Applies the 60 s cap and a peak-normalized retry on audible
+    speech that decodes to an empty string. Blocking: call from a worker thread
+    when running inside the event loop.
     """
-    if len(audio) == 0:
-        return audio
+    if len(audio_data) > 0:
+        audio_data = audio_data - np.mean(audio_data)  # Remove DC offset
 
-    frame_size = int(samplerate * frame_duration_ms / 1000)
-    padding_samples = int(samplerate * padding_ms / 1000)
+    duration = len(audio_data) / SAMPLE_RATE
+    if len(audio_data) < 1600:  # Less than 0.1 seconds of audio
+        print(f"[STT Diagnostics] Audio segment too short: {len(audio_data)} samples ({duration:.3f}s)")
+        return ""
 
-    num_frames = len(audio) // frame_size
-    if num_frames == 0:
-        return audio
+    # Parakeet handles leading/trailing silence well; trimming clipped quiet speech onsets
+    if float(np.sqrt(np.mean(audio_data**2))) < 0.002:  # Digital silence: nothing to decode
+        print("[STT Diagnostics] Audio is essentially silent; skipping decode.")
+        return ""
 
-    frames = audio[:num_frames * frame_size].reshape(num_frames, frame_size)
-    frame_rms = np.sqrt(np.mean(frames ** 2, axis=1))
+    max_samples = MAX_UTTERANCE_SECONDS * SAMPLE_RATE
+    if len(audio_data) > max_samples:
+        print(f"[STT Diagnostics] Audio segment too long: {duration:.3f}s. Truncating to {MAX_UTTERANCE_SECONDS}s.")
+        audio_data = audio_data[:max_samples]
 
-    max_rms = np.max(frame_rms)
-    if max_rms < 0.005:  # Audio is essentially pure silence
-        return audio
+    model = get_stt_model()
 
-    threshold = max(0.008, max_rms * 0.05)
-    active_frames = np.where(frame_rms > threshold)[0]
-    if len(active_frames) == 0:
-        return audio
+    try:
+        text = _decode(model, audio_data)
 
-    start_idx = max(0, active_frames[0] * frame_size - padding_samples)
-    end_idx = min(len(audio), (active_frames[-1] + 1) * frame_size + padding_samples)
+        # Retry fallback with peak normalization if result is empty on audible speech
+        if not text and float(np.sqrt(np.mean(audio_data**2))) > 0.01:
+            peak = float(np.max(np.abs(audio_data)))
+            if peak > 0:
+                text = _decode(model, (audio_data / peak) * 0.95)
 
-    return audio[start_idx:end_idx]
+        print(f"[STT Diagnostics] Decoded Text: '{text}'")
+        return text
+    except Exception as e:
+        print(f"[STT Diagnostics] Error transcribing audio: {e}")
+        return ""
 
 
 def transcribe_audio(audio_bytes: bytes) -> str:
     """
-    Transcribe raw audio bytes into text using Moonshine STT model.
+    Transcribe raw audio file bytes (WAV, WebM, FLAC, ...) into text.
 
     Args:
-        audio_bytes: In-memory raw audio bytes from client microphone.
+        audio_bytes: In-memory encoded audio file bytes.
 
     Returns:
         Transcribed text string.
@@ -142,39 +161,4 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         print(f"[STT Diagnostics] Failed to decode audio bytes: {e}")
         return ""
 
-    duration = len(audio_data) / 16000
-    if len(audio_data) < 1600:  # Less than 0.1 seconds of audio
-        print(f"[STT Diagnostics] Audio segment too short: {len(audio_data)} samples ({duration:.3f}s)")
-        return ""
-
-    # Trim leading/trailing silence
-    trimmed_audio = trim_silence(audio_data)
-    trimmed_duration = len(trimmed_audio) / 16000
-    if len(trimmed_audio) < 1600:
-        print(f"[STT Diagnostics] Audio only contains silence: {duration:.3f}s -> {trimmed_duration:.3f}s")
-        return ""
-
-    if trimmed_duration < duration:
-        print(f"[STT Diagnostics] Trimmed silence: {duration:.3f}s -> {trimmed_duration:.3f}s")
-
-    if len(trimmed_audio) > 60 * 16000:  # More than 60 seconds
-        print(f"[STT Diagnostics] Audio segment too long: {len(trimmed_audio)} samples ({trimmed_duration:.3f}s). Truncating to 60s.")
-        trimmed_audio = trimmed_audio[:60 * 16000]
-
-    model = get_stt_model()
-
-    # Direct transcription of speech sequence
-    try:
-        text = _run_whisper(model, trimmed_audio)
-
-        # Retry fallback with peak normalization if result is empty on audible speech
-        if not text and float(np.sqrt(np.mean(trimmed_audio**2))) > 0.01:
-            peak = float(np.max(np.abs(trimmed_audio)))
-            if peak > 0:
-                text = _run_whisper(model, (trimmed_audio / peak) * 0.95)
-
-        print(f"[STT Diagnostics] Decoded Text: '{text}'")
-        return text
-    except Exception as e:
-        print(f"[STT Diagnostics] Error transcribing audio: {e}")
-        return ""
+    return transcribe_pcm(audio_data)

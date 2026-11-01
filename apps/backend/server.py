@@ -4,6 +4,7 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 import json
+import re
 from typing import Any, Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,8 @@ from apps.backend.db.mongo import (
     delete_session,
 )
 from apps.backend.services.stt import transcribe_audio, get_stt_model
-from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, split_into_sentences, sanitize_for_tts
+from apps.backend.services.stt_stream import UtteranceBuffer
+from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, sanitize_for_tts
 from apps.backend.services.llm import stream_chat_completion, generate_chat_completion, SYSTEM_PROMPT
 from apps.backend.services.rag import (
     ingest_document,
@@ -46,6 +48,11 @@ async def lifespan(app: FastAPI):
         get_voice_model()
     except Exception as e:
         print(f"⚠️ Warning initializing TTS model: {e}")
+    try:
+        from apps.backend.services.rag import _get_embedding_model
+        _get_embedding_model()
+    except Exception as e:
+        print(f"⚠️ Warning initializing RAG embedding model: {e}")
 
     yield
 
@@ -290,11 +297,13 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
             sentence_buffer += token
             await websocket.send_json({"type": "token", "token": token})
 
-            # If sentence boundary reached, synthesize and send sentence
-            sentences = split_into_sentences(sentence_buffer)
-            if len(sentences) > 1:
-                complete_sentence = sentences[0]
-                sentence_buffer = " ".join(sentences[1:])
+            # If sentence boundary reached, synthesize and send each completed sentence in order
+            while True:
+                m = re.search(r"([.!?\n]+)\s+", sentence_buffer)
+                if not m:
+                    break
+                complete_sentence = sentence_buffer[:m.end(1)].strip()
+                sentence_buffer = sentence_buffer[m.end():]
                 clean_sentence = sanitize_for_tts(complete_sentence)
                 if clean_sentence:
                     try:
@@ -349,19 +358,45 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
 async def websocket_chat(websocket: WebSocket):
     """
     Bi-directional streaming WebSocket:
-    - Receives text, interrupt, or audio messages
+    - Receives text, interrupt, or streamed audio (audio_start, binary PCM frames, audio_pause/audio_resume, audio_end)
     - Streams LLM text tokens and synthesized audio chunks back to the client
     - Supports real-time cancellation / barge-in
     """
     await websocket.accept()
     current_session_id = None
     active_task: Optional[asyncio.Task] = None
+    utterance = UtteranceBuffer()
 
     try:
         while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000))
+
+            # Streamed microphone audio frames (16-bit little-endian mono PCM)
+            if message.get("bytes") is not None:
+                utterance.append(message["bytes"])
+                continue
+
+            payload = json.loads(message.get("text") or "{}")
             msg_type = payload.get("type", "text")
+
+            # Audio control messages never create or touch a session
+            if msg_type == "audio_start":
+                utterance.cancel()
+                utterance.reset(int(payload.get("sample_rate") or 16000))
+                continue
+            if msg_type == "audio_pause":
+                utterance.pause()
+                continue
+            if msg_type == "audio_resume":
+                utterance.resume()
+                continue
+            if msg_type == "audio_end":
+                text = await utterance.finish()
+                await websocket.send_json({"type": "transcript", "text": text})
+                continue
+
             session_id = payload.get("session_id")
             user_text = payload.get("text", "")
 
@@ -401,6 +436,7 @@ async def websocket_chat(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket exception: {e}")
     finally:
+        utterance.cancel()
         if active_task and not active_task.done():
             active_task.cancel()
             try:

@@ -15,8 +15,8 @@ describe('ChatContainerComponent', () => {
   const isRecordingSig = signal(false);
   const audioLevelSig = signal(0);
   const speechDetectedSig = signal(0);
-  const audioChunkSig = signal<Blob | null>(null);
-  const wsMessageSig = signal<any>(null);
+  const utteranceEndedSig = signal(0);
+  const wsMessagesSig = signal<any[]>([]);
 
   const mockApiService = {
     getHealth: () => Promise.resolve({ engine: 'ollama', model: 'llama3' }),
@@ -25,8 +25,12 @@ describe('ChatContainerComponent', () => {
     updateSession: (sessionId: string, title: string) => Promise.resolve({ session_id: sessionId, title }),
     deleteSession: (sessionId: string) => Promise.resolve({ status: 'deleted', session_id: sessionId }),
     getMessages: () => Promise.resolve([]),
-    transcribeAudio: vi.fn().mockResolvedValue('mock transcribed text'),
-    wsMessage: wsMessageSig.asReadonly(),
+    wsMessages: wsMessagesSig.asReadonly(),
+    drainWsMessages: () => {
+      const msgs = wsMessagesSig();
+      wsMessagesSig.set([]);
+      return msgs;
+    },
     connectWebSocket: vi.fn(),
     closeWebSocket: () => {},
     sendWsMessage: vi.fn(),
@@ -35,7 +39,7 @@ describe('ChatContainerComponent', () => {
   const mockAudioRecordService = {
     isRecording: isRecordingSig.asReadonly(),
     audioLevel: audioLevelSig.asReadonly(),
-    audioChunk: audioChunkSig.asReadonly(),
+    utteranceEnded: utteranceEndedSig.asReadonly(),
     speechDetected: speechDetectedSig.asReadonly(),
     startRecording: () => Promise.resolve(),
     stopRecording: () => Promise.resolve(),
@@ -58,8 +62,8 @@ describe('ChatContainerComponent', () => {
     isRecordingSig.set(false);
     audioLevelSig.set(0);
     speechDetectedSig.set(0);
-    audioChunkSig.set(null);
-    wsMessageSig.set(null);
+    utteranceEndedSig.set(0);
+    wsMessagesSig.set([]);
 
     await TestBed.configureTestingModule({
       imports: [ChatContainerComponent],
@@ -165,13 +169,35 @@ describe('ChatContainerComponent', () => {
     });
   });
 
-  it('should handle incoming audio chunk signal from VAD and process it via effect', () => {
-    const fakeBlob = new Blob(['wav-content'], { type: 'audio/wav' });
+  it('should wait for the backend transcript when a streamed utterance ends, then send it as text', async () => {
+    component.currentSessionId.set('test-session-123');
 
-    audioChunkSig.set(fakeBlob);
+    utteranceEndedSig.set(1);
+    fixture.detectChanges();
+    expect(component.isProcessingVoice()).toBe(true);
+
+    wsMessagesSig.set([{ type: 'transcript', text: 'mock transcribed text' }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.isProcessingVoice()).toBe(false);
+    expect(mockApiService.sendWsMessage).toHaveBeenCalledWith({
+      type: 'text',
+      session_id: 'test-session-123',
+      text: 'mock transcribed text',
+    });
+  });
+
+  it('should show a no-speech message when the transcript is empty', async () => {
+    utteranceEndedSig.set(1);
     fixture.detectChanges();
 
-    expect(mockApiService.transcribeAudio).toHaveBeenCalledWith(fakeBlob);
+    wsMessagesSig.set([{ type: 'transcript', text: '' }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.isProcessingVoice()).toBe(false);
+    expect(component.messages().some((m) => m.text.includes('No speech detected'))).toBe(true);
   });
 
   it('should stop speech playback and preserve streaming text on stopSpeechPlayback', () => {
@@ -190,21 +216,39 @@ describe('ChatContainerComponent', () => {
     });
   });
 
-  it('should react to wsMessage token and done signals via effect', () => {
+  it('should react to wsMessages token and done signals via effect', () => {
     component.currentSessionId.set('test-session-123');
     component.isStreaming.set(true);
     fixture.detectChanges();
 
     // Stream token event
-    wsMessageSig.set({ type: 'token', token: 'Hello' });
+    wsMessagesSig.set([{ type: 'token', token: 'Hello' }]);
     fixture.detectChanges();
     expect(component.streamingText()).toBe('Hello');
 
     // Stream done event
-    wsMessageSig.set({ type: 'done', full_text: 'Hello world!' });
+    wsMessagesSig.set([{ type: 'done', full_text: 'Hello world!' }]);
     fixture.detectChanges();
     expect(component.isStreaming()).toBe(false);
     expect(component.messages().some((m) => m.text === 'Hello world!')).toBe(true);
+  });
+
+  it('should enqueue audio_sentence even when sent in a batch with a subsequent token without dropping audio', () => {
+    const enqueueSpy = vi.spyOn(mockAudioPlaybackService, 'stopPlayback'); // verify mock exists
+    (mockAudioPlaybackService as any).enqueueBase64Wav = vi.fn();
+    component.currentSessionId.set('test-session-123');
+    component.isStreaming.set(true);
+    fixture.detectChanges();
+
+    // Both audio_sentence and token arrive in the same batch
+    wsMessagesSig.set([
+      { type: 'audio_sentence', sentence: 'Got it.', audio: 'fake-wav-base64' },
+      { type: 'token', token: " I'm" },
+    ]);
+    fixture.detectChanges();
+
+    expect((mockAudioPlaybackService as any).enqueueBase64Wav).toHaveBeenCalledWith('fake-wav-base64');
+    expect(component.streamingText()).toBe(" I'm");
   });
 
   it('should preemptively stop playback and stream new query on sendText', async () => {

@@ -6,6 +6,7 @@
     "start": "bunx nx serve frontend",
     "build": "bunx nx build frontend",
     "test": "bunx nx test frontend",
+    "models:cache": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/scripts/cache_models.py",
     "backend": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py",
     "backend:dev": "PYTHONPATH=. uv run --project apps/backend python3 apps/backend/main.py --reload",
     "docker:db:up": "docker compose up -d mongodb",

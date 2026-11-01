@@ -20,15 +20,15 @@ def cache_all_models():
     except Exception as e:
         print(f"⚠️ Failed to cache Piper TTS voice model: {e}")
 
-    # 2. Whisper (whisper.cpp) STT Model
+    # 2. Parakeet TDT STT Model
     try:
-        from pywhispercpp.model import Model
+        from apps.backend.common.model_manager import load_parakeet_recognizer
 
-        print("📥 Caching Whisper STT model (small.en)...")
-        Model("small.en")
-        print("✅ Whisper STT model cached.")
+        print("📥 Caching Parakeet STT model (sherpa-onnx, INT8)...")
+        load_parakeet_recognizer()
+        print("✅ Parakeet STT model cached.")
     except Exception as e:
-        print(f"⚠️ Failed to cache Whisper STT model: {e}")
+        print(f"⚠️ Failed to cache Parakeet STT model: {e}")
 
     # 3. FastEmbed RAG Embedding Model
     try:

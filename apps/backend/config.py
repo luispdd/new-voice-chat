@@ -4,6 +4,9 @@ import argparse
 import os
 from pydantic import BaseModel, Field
 
+# Default STT model: sherpa-onnx Parakeet TDT 0.6b v2 (English, INT8) on HuggingFace Hub
+PARAKEET_REPO_ID = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+
 
 class Settings(BaseModel):
     # Server settings
@@ -55,8 +58,12 @@ class Settings(BaseModel):
 
     # STT Settings
     stt_model_name: str = Field(
-        default=os.getenv("STT_MODEL_NAME", "small.en"),
-        description="Whisper.cpp ggml model name or path (e.g. small.en, small)",
+        default=os.getenv("STT_MODEL_NAME", PARAKEET_REPO_ID),
+        description="HuggingFace repo ID of the sherpa-onnx Parakeet TDT STT model",
+    )
+    stt_num_threads: int = Field(
+        default=int(os.getenv("STT_THREADS", str(min(8, os.cpu_count() or 4)))),
+        description="CPU threads used by the STT recognizer",
     )
 
     # TTS Settings
@@ -97,8 +104,8 @@ def get_settings() -> Settings:
     parser.add_argument(
         "--stt-model",
         type=str,
-        default=os.getenv("STT_MODEL_NAME", "small.en"),
-        help="Whisper.cpp ggml model name or path (e.g. small.en, small)",
+        default=os.getenv("STT_MODEL_NAME", PARAKEET_REPO_ID),
+        help="HuggingFace repo ID of the sherpa-onnx Parakeet TDT STT model",
     )
     parser.add_argument(
         "--history-limit",
@@ -140,7 +147,7 @@ def get_settings() -> Settings:
             "for real OpenAI, pass --api-key."
         )
     mongo_uri = args.mongo_uri or os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", "small.en")
+    stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", PARAKEET_REPO_ID)
 
     return Settings(
         host=args.host,

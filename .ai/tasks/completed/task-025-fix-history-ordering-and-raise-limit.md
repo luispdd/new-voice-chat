@@ -1,6 +1,6 @@
 # Task 025: Fix LLM History Ordering and Raise Limit to 100
 
-- **Status**: Active
+- **Status**: Completed & verified
 - **Target Component**: `apps/backend/db/mongo.py`, `apps/backend/config.py`, `apps/backend/tests/test_config_history_limit.py`
 - **Instruction Reference**: [backend-python.md](../../instructions/backend-python.md)
 - **Spec Reference**: [001-core-text-chat.md](../../specs/001-core-text-chat.md), [004-session-persistence-mongo.md](../../specs/004-session-persistence-mongo.md)

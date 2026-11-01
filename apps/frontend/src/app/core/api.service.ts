@@ -37,8 +37,8 @@ export class ApiService {
     ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/chat`
     : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat`;
   private ws: WebSocket | null = null;
-  private _wsMessage = signal<any>(null);
-  readonly wsMessage = this._wsMessage.asReadonly();
+  private _wsMessages = signal<any[]>([]);
+  readonly wsMessages = this._wsMessages.asReadonly();
 
   constructor() {}
 
@@ -152,7 +152,7 @@ export class ApiService {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          this._wsMessage.set(data);
+          this._wsMessages.update((q) => [...q, data]);
         } catch (e) {
           console.error('Error parsing WS message', e);
         }
@@ -163,9 +163,24 @@ export class ApiService {
     }
   }
 
+  drainWsMessages(): any[] {
+    const msgs = this._wsMessages();
+    if (msgs.length > 0) {
+      this._wsMessages.set([]);
+    }
+    return msgs;
+  }
+
   sendWsMessage(payload: any): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(payload));
+    }
+  }
+
+  /** Send a binary frame (streamed 16-bit PCM microphone audio). */
+  sendWsBinary(data: ArrayBuffer): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
     }
   }
 }

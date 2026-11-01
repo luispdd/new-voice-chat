@@ -13,7 +13,7 @@ The system consists of audio pipelines, streaming WebSockets, local ONNX neural 
 
 ### 2. Neural Audio & Synthesis Layer
 - **Piper TTS**: Verify `hf_hub_download` retrieves model and config files and synthesizes non-empty 22050Hz 16-bit PCM WAV chunks.
-- **Moonshine ONNX STT**: Test `moonshine_onnx.transcribe` with synthetic/recorded WAV audio to ensure `float32` normalization and transcription work without crashing.
+- **Parakeet STT (sherpa-onnx)**: Test `transcribe_audio` / `transcribe_pcm` with synthetic/recorded audio to ensure `float32` normalization and transcription work without crashing. Unit tests mock the recognizer (`apps/backend/tests/test_stt_streaming.py`).
 - **End-to-End Test Script**:
   ```bash
   PYTHONPATH=. uv run --project apps/backend python3 -c "

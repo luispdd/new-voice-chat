@@ -10,17 +10,18 @@
 - **Pydantic**: Request and response schema validation.
 - **Motor / PyMongo**: Async driver for MongoDB database operations.
 - **OpenAI Python SDK**: Client for OpenAI-compatible endpoints (LM Studio, Ollama, OpenRouter, OpenAI).
-- **Moonshine Voice (`moonshine-voice`)**: Fast local Speech-to-Text inference supporting streaming and base architectures (`medium-streaming`, `small-streaming`, `base-streaming`, `tiny-streaming`, `base`, `tiny`).
+- **sherpa-onnx (`sherpa-onnx`)**: Local CPU Speech-to-Text with the English-only Parakeet TDT 0.6b v2 INT8 model (`OfflineRecognizer.from_transducer`, `model_type="nemo_transducer"`).
 - **Piper TTS (`piper-tts`) & ONNX Runtime**: Local neural voice synthesis with sentence streaming.
 - **Audio Preprocessing**: `soundfile`, `pydub`, `numpy`, and `audioop-lts` (required for Python 3.13 compatibility).
 
 ## Key Patterns
 1. **Piper Model Manager**: Download voice models via `hf_hub_download` from `rhasspy/piper-voices` with optimized ONNX thread sessions (`intra_op_num_threads=2`, `inter_op_num_threads=2`).
 2. **STT Service Architecture**:
-   - Always initialize and warm up the `pywhispercpp` `Model` singleton (default `small.en`, ggml) once in lifespan startup to avoid per-request model reloading.
+   - Always initialize and warm up the Parakeet `OfflineRecognizer` singleton (HF repo `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`, downloaded with `hf_hub_download`) once in lifespan startup to avoid per-request model reloading. Serialize decoding with a lock.
    - Decode raw audio payloads via `pydub.AudioSegment.from_file` normalized to 16kHz mono `float32` arrays in `[-1.0, 1.0]` with DC offset removal.
-   - Run `trim_silence()` before inference to strip leading/trailing silence with 250ms padding.
-   - Transcribe the full utterance in a single `Model.transcribe` call and strip non-speech tags such as `[BLANK_AUDIO]` from the output.
+   - Do not trim silence before inference (it clipped quiet speech onsets); skip decoding only for digital silence.
+   - Transcribe the full utterance in a single `decode_stream` call, in a worker thread (`asyncio.to_thread`) when called from the event loop.
+   - Streamed microphone audio arrives over `/ws/chat` as binary PCM frames; `UtteranceBuffer` (`services/stt_stream.py`) transcribes speculatively when the client sends `audio_pause` (700 ms of silence per the browser VAD) so the transcript is ready at end of turn. Never infer silence from RMS on the backend.
 3. **Sentence-Level TTS Streaming**: Split incoming LLM token stream at sentence boundaries (`. ! ? \n`) and synthesize audio sentence-by-sentence to achieve low Time-to-First-Audio (TTFA).
 4. **Lifespan Warmup**: Always warm up DB connections, tokenizer, and voice models in FastAPI's `lifespan` handler.
 5. **Development Reload & CPU Optimization**:

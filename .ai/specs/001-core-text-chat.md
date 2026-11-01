@@ -48,5 +48,7 @@ Provides text-based conversation capabilities supporting real-time token streami
   - Response: `{ reply: string, message: Message }` or SSE stream of `{ token: string }`.
 - `WebSocket /ws/chat`:
   - Inbound: `{ type: "text", session_id: string, text: string }`
+  - Inbound audio (see Spec 002): `{ type: "audio_start", sample_rate: number }`, then binary frames (16-bit little-endian mono PCM), optional `{ type: "audio_pause" }` / `{ type: "audio_resume" }` hints, then `{ type: "audio_end" }`. Audio messages are handled before session resolution and never create a session.
   - Context Injection: Automatically retrieves and injects knowledge chunks when the target session has attached documents.
   - Outbound: `{ type: "token", token: string }`, `{ type: "done", full_text: string }`
+  - Outbound audio: `{ type: "transcript", text: string }` in response to `audio_end` (`text` is empty when no speech was detected).

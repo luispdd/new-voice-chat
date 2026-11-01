@@ -9,6 +9,7 @@ export class AudioPlaybackService {
   private isProcessingQueue = false;
   private currentSource: AudioBufferSourceNode | null = null;
   private playbackEpoch = 0;
+  private decodeChain: Promise<void> = Promise.resolve();
 
   private _isPlaying = signal<boolean>(false);
   readonly isPlaying = this._isPlaying.asReadonly();
@@ -59,24 +60,33 @@ export class AudioPlaybackService {
     await this.enqueueArrayBuffer(bytes.buffer);
   }
 
-  private async enqueueArrayBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
+  private enqueueArrayBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
     if (this._isMuted()) {
-      return;
+      return Promise.resolve();
     }
     const epoch = this.playbackEpoch;
-    const ctx = this.initAudioContext();
-    try {
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-      if (this._isMuted() || this.playbackEpoch !== epoch) {
-        return;
-      }
-      this.queue.push(audioBuffer);
-      if (!this.isProcessingQueue) {
-        this.processQueue();
-      }
-    } catch (err) {
-      console.error('Error decoding audio data for playback:', err);
-    }
+    // Chain decoding to guarantee audio chunks are decoded and queued in exact FIFO order
+    this.decodeChain = this.decodeChain
+      .catch(() => {})
+      .then(async () => {
+        if (this._isMuted() || this.playbackEpoch !== epoch) {
+          return;
+        }
+        const ctx = this.initAudioContext();
+        try {
+          const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          if (this._isMuted() || this.playbackEpoch !== epoch) {
+            return;
+          }
+          this.queue.push(audioBuffer);
+          if (!this.isProcessingQueue) {
+            this.processQueue();
+          }
+        } catch (err) {
+          console.error('Error decoding audio data for playback:', err);
+        }
+      });
+    return this.decodeChain;
   }
 
   private processQueue(): void {
@@ -119,6 +129,7 @@ export class AudioPlaybackService {
 
   stopPlayback(): void {
     this.playbackEpoch++;
+    this.decodeChain = Promise.resolve();
     this.queue = [];
     if (this.currentSource) {
       const source = this.currentSource;

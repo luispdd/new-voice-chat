@@ -53,6 +53,8 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   readonly audioLevel = this.audioRecord.audioLevel;
   isProcessingVoice = signal<boolean>(false);
   isVadActive = signal<boolean>(false);
+  private transcriptTimeout: any = null;
+  private readonly transcriptTimeoutMs = 15000;
   healthInfo = signal<any>(null);
   sessionDocuments = signal<SessionDocument[]>([]);
   isUploadingFile = signal<boolean>(false);
@@ -80,22 +82,25 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
       }
     });
 
-    // React to recorded voice chunks from VAD signal
+    // React to end of a streamed utterance (audio frames were already sent while speaking)
     effect(() => {
-      const chunk = this.audioRecord.audioChunk();
-      if (chunk) {
+      const ended = this.audioRecord.utteranceEnded();
+      if (ended > 0) {
         untracked(() => {
-          this.handleAudioChunk(chunk);
+          this.handleUtteranceEnd();
         });
       }
     });
 
-    // React to WebSocket events signal
+    // React to WebSocket events queue signal
     effect(() => {
-      const event = this.api.wsMessage();
-      if (event) {
+      const messages = this.api.wsMessages();
+      if (messages.length > 0) {
         untracked(() => {
-          this.handleWsEvent(event);
+          const batch = this.api.drainWsMessages();
+          for (const event of batch) {
+            this.handleWsEvent(event);
+          }
         });
       }
     });
@@ -304,15 +309,43 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
     }
   }
 
-  async handleAudioChunk(blob: Blob) {
+  /** Utterance finished: the backend is transcribing the streamed audio; wait for its `transcript` event. */
+  handleUtteranceEnd(): void {
     this.isProcessingVoice.set(true);
+    this.clearTranscriptTimeout();
+    this.transcriptTimeout = setTimeout(() => this.handleTranscript(null), this.transcriptTimeoutMs);
+  }
+
+  private clearTranscriptTimeout(): void {
+    if (this.transcriptTimeout) {
+      clearTimeout(this.transcriptTimeout);
+      this.transcriptTimeout = null;
+    }
+  }
+
+  /** `text` is the backend transcript, or null when it never arrived (timeout). */
+  async handleTranscript(text: string | null) {
+    if (!this.isProcessingVoice()) return;
+    this.clearTranscriptTimeout();
     let shouldRestartVad = false;
 
     try {
-      const transcribedText = await this.api.transcribeAudio(blob);
-      if (transcribedText && transcribedText.trim()) {
+      if (text === null) {
+        console.error('STT error: transcript timed out');
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            session_id: this.currentSessionId(),
+            role: 'assistant',
+            text: 'Failed to transcribe audio. Please try again.',
+            is_error: true,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        shouldRestartVad = true;
+      } else if (text.trim()) {
         this.isProcessingVoice.set(false);
-        await this.sendText(transcribedText.trim());
+        await this.sendText(text.trim());
       } else {
         // Empty audio transcription detected
         this.messages.update((msgs) => [
@@ -327,19 +360,6 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
         ]);
         shouldRestartVad = true;
       }
-    } catch (e) {
-      console.error('STT error:', e);
-      this.messages.update((msgs) => [
-        ...msgs,
-        {
-          session_id: this.currentSessionId(),
-          role: 'assistant',
-          text: 'Failed to transcribe audio. Please try again.',
-          is_error: true,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
-      shouldRestartVad = true;
     } finally {
       this.isProcessingVoice.set(false);
       if (shouldRestartVad) {
@@ -349,13 +369,15 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   }
 
   private async handleWsEvent(event: any) {
-    if (event.type === 'token') {
+    if (event.type === 'transcript') {
+      await this.handleTranscript(event.text ?? '');
+    } else if (event.type === 'token') {
       if (this.isStreaming()) {
         this.streamingText.update((t) => t + event.token);
         this.chatHistory()?.scrollToBottom(true);
       }
     } else if (event.type === 'audio_sentence') {
-      if (this.isStreaming() && event.audio) {
+      if (event.audio) {
         this.audioPlayback.enqueueBase64Wav(event.audio);
       }
     } else if (event.type === 'interrupted') {
