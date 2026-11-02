@@ -24,6 +24,22 @@ export interface SessionDocument {
   session_id: string;
 }
 
+export interface LlmSettings {
+  engine: string;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  auth_error?: boolean;
+  auth_message?: string | null;
+}
+
+export interface UpdateLlmSettingsPayload {
+  engine: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -44,6 +60,24 @@ export class ApiService {
 
   async getHealth(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/health`);
+    return res.json();
+  }
+
+  async getLlmSettings(): Promise<LlmSettings> {
+    const res = await fetch(`${this.baseUrl}/api/settings/llm`);
+    return res.json();
+  }
+
+  async updateLlmSettings(payload: UpdateLlmSettingsPayload): Promise<LlmSettings> {
+    const res = await fetch(`${this.baseUrl}/api/settings/llm`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to save LLM settings' }));
+      throw new Error(err.detail || 'Failed to save LLM settings');
+    }
     return res.json();
   }
 

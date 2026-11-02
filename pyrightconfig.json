@@ -6,5 +6,8 @@
     "."
   ],
   "venvPath": "apps/backend",
-  "venv": ".venv"
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": false
 }

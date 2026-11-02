@@ -18,12 +18,16 @@ class UtteranceBuffer:
     """
 
     def __init__(self) -> None:
+        self._sample_rate: int = SAMPLE_RATE
+        self._chunks: list[np.ndarray] = []
+        self._spec_task: Optional[asyncio.Task[str]] = None
+        self._spec_valid: bool = False
         self.reset()
 
     def reset(self, sample_rate: int = SAMPLE_RATE) -> None:
         self._sample_rate = sample_rate
-        self._chunks: list[np.ndarray] = []
-        self._spec_task: Optional[asyncio.Task] = None
+        self._chunks = []
+        self._spec_task = None
         self._spec_valid = False
 
     def append(self, pcm: bytes) -> None:

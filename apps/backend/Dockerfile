@@ -20,13 +20,18 @@ COPY apps/backend/pyproject.toml apps/backend/uv.lock apps/backend/README.md ./a
 WORKDIR /app/apps/backend
 RUN uv sync --frozen --no-dev
 
-# Copy backend application source code
+# Pre-cache ONNX models and Piper voice assets in a dedicated build layer
+# Copy only model manager and caching script first so code edits don't invalidate the ~900MB model cache
 WORKDIR /app
-COPY apps/backend ./apps/backend
-
-# Pre-cache ONNX models and Piper voice assets in build layer
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
+COPY apps/backend/__init__.py ./apps/backend/__init__.py
+COPY apps/backend/common ./apps/backend/common
+COPY apps/backend/scripts/cache_models.py ./apps/backend/scripts/cache_models.py
 RUN uv run --project apps/backend python apps/backend/scripts/cache_models.py
+
+# Copy remaining backend application source code
+COPY apps/backend ./apps/backend
 
 # Expose backend port
 EXPOSE 8000

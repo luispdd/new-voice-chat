@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 
 def cache_all_models():
+    # pylint: disable=import-outside-toplevel
     print("🚀 Pre-caching neural models for Docker build...")
 
     # 1. Piper TTS Voice Model

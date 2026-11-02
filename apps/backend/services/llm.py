@@ -1,6 +1,7 @@
 """LLM service connecting to OpenAI-compatible APIs (LM Studio, Ollama, OpenRouter, OpenAI)."""
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from typing import Any, cast
 from openai import (
     AsyncOpenAI,
     APIConnectionError,
@@ -14,6 +15,7 @@ from openai import (
     APIStatusError,
     APIError,
 )
+from openai.types.chat import ChatCompletionMessageParam
 from apps.backend.config import settings
 
 _client: AsyncOpenAI | None = None
@@ -36,6 +38,7 @@ def format_llm_exception(
     model: str | None = None,
 ) -> str:
     """Format LLM exceptions into concise, user-friendly error messages."""
+    _ = (base_url, model)
     eng = (engine or settings.engine).lower()
 
     engine_display = {
@@ -72,6 +75,26 @@ def format_llm_exception(
     return f"[Error: Unable to generate response from {engine_display}]"
 
 
+def reset_llm_client() -> None:
+    global _client
+    _client = None
+
+
+async def check_llm_auth_status() -> dict[str, Any]:
+    """Probe the configured LLM endpoint to detect if an API key is required (401/403)."""
+    try:
+        client = get_llm_client()
+        await client.models.list(timeout=2.0)
+        return {"auth_error": False, "auth_message": None}
+    except (AuthenticationError, PermissionDeniedError):
+        return {
+            "auth_error": True,
+            "auth_message": "An API Key is required by the LLM server. Please enter your API Key.",
+        }
+    except Exception:
+        return {"auth_error": False, "auth_message": None}
+
+
 def get_llm_client() -> AsyncOpenAI:
     global _client
     if _client is None:
@@ -84,7 +107,7 @@ def get_llm_client() -> AsyncOpenAI:
 
 
 async def stream_chat_completion(
-    messages: list[dict[str, str]],
+    messages: Sequence[Mapping[str, Any]],
     system_prompt: str = SYSTEM_PROMPT,
     model: str | None = None,
 ) -> AsyncGenerator[str, None]:
@@ -94,9 +117,16 @@ async def stream_chat_completion(
     client = get_llm_client()
     target_model = model or settings.llm_model
 
-    formatted_messages = [{"role": "system", "content": system_prompt}]
+    formatted_messages: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": system_prompt}
+    ]
     for msg in messages:
-        formatted_messages.append({"role": msg["role"], "content": msg["text"]})
+        formatted_messages.append(
+            cast(
+                ChatCompletionMessageParam,
+                {"role": str(msg["role"]), "content": str(msg["text"])},
+            )
+        )
 
     try:
         response = await client.chat.completions.create(
@@ -124,14 +154,12 @@ async def stream_chat_completion(
 
 
 async def generate_chat_completion(
-    messages: list[dict[str, str]],
+    messages: Sequence[Mapping[str, Any]],
     system_prompt: str = SYSTEM_PROMPT,
     model: str | None = None,
 ) -> str:
     """
     Generate complete chat response non-streamed.
     """
-    full_text = ""
-    async for token in stream_chat_completion(messages, system_prompt, model):
-        full_text += token
-    return full_text.strip()
+    chunks = [token async for token in stream_chat_completion(messages, system_prompt, model)]
+    return "".join(chunks).strip()

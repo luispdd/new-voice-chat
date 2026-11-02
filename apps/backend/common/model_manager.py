@@ -11,7 +11,6 @@ Usage:
 """
 
 import json
-import os
 import onnxruntime as ort
 from huggingface_hub import hf_hub_download
 from piper.config import PiperConfig
@@ -77,7 +76,7 @@ def load_parakeet_recognizer(repo_id: str = PARAKEET_REPO_ID, num_threads: int =
     Returns:
         A `sherpa_onnx.OfflineRecognizer` ready for decoding 16 kHz mono float32 audio.
     """
-    import sherpa_onnx  # Imported lazily so TTS-only code paths do not require it
+    import sherpa_onnx  # pylint: disable=import-outside-toplevel
 
     print(f"📦 Verifying/Downloading Parakeet STT Model ({repo_id})...")
     paths = {name: hf_hub_download(repo_id=repo_id, filename=name) for name in PARAKEET_FILES}
@@ -91,4 +90,3 @@ def load_parakeet_recognizer(repo_id: str = PARAKEET_REPO_ID, num_threads: int =
         provider="cpu",
         model_type="nemo_transducer",
     )
-

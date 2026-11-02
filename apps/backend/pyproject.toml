@@ -35,3 +35,29 @@ packages = ["."]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pylint.main]
+init-hook = "import os, sys; root = os.getcwd(); sys.path.extend([root, os.path.join(root, 'apps/backend/.venv/lib/python3.13/site-packages')])"
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint."messages control"]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "broad-exception-caught",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-return-statements",
+    "global-statement",
+]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."

@@ -21,21 +21,28 @@ services:
       dockerfile: apps/backend/Dockerfile
     container_name: voice-chat-backend-prod
     restart: unless-stopped
+    network_mode: host
     depends_on:
       mongodb:
         condition: service_healthy
     environment:
-      MONGO_URI: mongodb://mongodb:27017
-      MONGO_DB_NAME: voice_chat
-      LLM_ENGINE: ${LLM_ENGINE:-lmstudio}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-voice_chat}
+      BACKEND_URL: ${BACKEND_URL}
+      LLM_ENGINE: ${LLM_ENGINE}
+      LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY:-not-needed}
-      LLM_MODEL: ${LLM_MODEL:-google/gemma-3-4b-it-qat}
+      LLM_MODEL: ${LLM_MODEL}
       STT_MODEL_NAME: ${STT_MODEL_NAME:-csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8}
     extra_hosts:
-      - "host.docker.internal:host-gateway"
-    expose:
-      - "8000"
+      - "backend.localhost:127.0.0.1"
+      - "mongodb.localhost:127.0.0.1"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['BACKEND_URL'] + '/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   frontend:
     build:
@@ -43,11 +50,14 @@ services:
       dockerfile: apps/frontend/Dockerfile
     container_name: voice-chat-frontend-prod
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    network_mode: host
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: ${BACKEND_URL}
+    extra_hosts:
+      - "backend.localhost:127.0.0.1"
     volumes:
       - ./cert.pem:/etc/nginx/certs/cert.pem:ro
       - ./key.pem:/etc/nginx/certs/key.pem:ro

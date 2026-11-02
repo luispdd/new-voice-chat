@@ -7,10 +7,11 @@ Provides text-based conversation capabilities supporting real-time token streami
 
 ## Requirements
 1. **Multi-Provider Support**:
-   - `lmstudio`: Default local engine running on `http://127.0.0.1:1234/v1` (e.g. `google/gemma-3-4b-it-qat`).
+   - `openai`: Default engine running on `http://127.0.0.1:8888/v1` with default model `unsloth/qwen3.5-4B-GGUF` (also supports cloud OpenAI API `https://api.openai.com/v1` or any OpenAI-compatible server).
+   - `lmstudio`: Local engine running on `http://127.0.0.1:1234/v1` (e.g. `google/gemma-3-4b-it-qat`).
    - `ollama`: Local engine on `http://127.0.0.1:11434/v1` (e.g. `llama3`).
-   - `openai`: Cloud OpenAI API (`https://api.openai.com/v1`).
    - `openrouter`: Multi-model aggregator (`https://openrouter.ai/api/v1`).
+   - Default values can be overridden via CLI parameters (`--engine`, `--base-url`, `--model`, `--api-key`).
 2. **Streaming Protocol**:
    - REST `/api/chat` with SSE (`text/event-stream`).
    - WebSocket `/ws/chat` for bi-directional live token streaming and simultaneous sentence-level voice synthesis.
@@ -35,8 +36,16 @@ Provides text-based conversation capabilities supporting real-time token streami
    - The user can view the conversation history.
    - Both the list of conversation history and the messages list should be scrollable.
    - The last message should be always visible unless the user scroll to the previous messages.
+   - **Dynamic LLM Settings Modal**:
+     - The bottom-left sidebar footer (`sidebar-footer` / `.health-badge`) displaying the active `ENGINE (model)` is a clickable trigger that opens an LLM Configuration modal dialog.
+     - The modal contains inputs for **Engine** (`openai`, `lmstudio`, `ollama`, `openrouter`), **Base URL**, **Model**, and **API Key** (`type="password"`).
+     - Changes are persisted in MongoDB and applied immediately at runtime, and automatically restored on future application startups (unless overridden by explicit CLI parameters).
+     - Once stored, the `api_key` is never sent back or displayed in the modal input; instead, a boolean `has_api_key` flag indicates whether a secret key is already saved, and leaving the password input blank on save preserves the existing stored key.
+     - If on the first connection an authentication error occurs because an API key is required by the LLM server, the UI automatically opens the configuration modal displaying a prompt message asking the user to enter their API key.
 
 ## API Contracts
+- `GET /api/settings/llm`: Returns active LLM configuration `{ engine: string, base_url: string, model: string, has_api_key: boolean, auth_error?: boolean, auth_message?: string | null }` (never exposes `api_key`).
+- `PUT /api/settings/llm`: Updates and persists LLM configuration `{ engine: string, base_url: string, model: string, api_key?: string }` to MongoDB and reconfigures the backend LLM client at runtime.
 - `GET /api/sessions`: List user sessions sorted by `last_active` descending.
 - `POST /api/sessions`: Create a new session `{ title?: string, user_id?: string }`.
 - `PATCH /api/sessions/{session_id}`: Update session metadata `{ title: string }`.

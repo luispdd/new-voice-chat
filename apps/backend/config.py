@@ -2,7 +2,18 @@
 
 import argparse
 import os
+from pathlib import Path
+import sys
 from pydantic import BaseModel, Field
+
+# Load root .env file into environment variables if present
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+if _ENV_FILE.exists():
+    for _line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 # Default STT model: sherpa-onnx Parakeet TDT 0.6b v2 (English, INT8) on HuggingFace Hub
 PARAKEET_REPO_ID = "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
@@ -26,34 +37,38 @@ class Settings(BaseModel):
 
     # Database settings
     mongo_uri: str = Field(
-        default=os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+        default_factory=lambda: os.getenv("MONGO_URI", ""),
         description="MongoDB connection string",
     )
     mongo_db_name: str = Field(
-        default=os.getenv("MONGO_DB_NAME", "voice_chat"),
+        default_factory=lambda: os.getenv("MONGO_DB_NAME", "voice_chat"),
         description="MongoDB database name",
     )
 
     # LLM Settings
     engine: str = Field(
-        default=os.getenv("LLM_ENGINE", "lmstudio"),
+        default_factory=lambda: os.getenv("LLM_ENGINE", ""),
         description="LLM provider: 'lmstudio', 'ollama', 'openai', 'openrouter'",
     )
     llm_base_url: str = Field(
-        default=os.getenv("LLM_BASE_URL", "http://127.0.0.1:1234/v1"),
+        default_factory=lambda: os.getenv("LLM_BASE_URL", ""),
         description="OpenAI-compatible base URL",
     )
     llm_api_key: str = Field(
-        default=os.getenv("LLM_API_KEY", "not-needed"),
+        default_factory=lambda: os.getenv("LLM_API_KEY", "not-needed"),
         description="API key for LLM provider",
     )
     llm_model: str = Field(
-        default=os.getenv("LLM_MODEL", "google/gemma-3-4b-it-qat"),
+        default_factory=lambda: os.getenv("LLM_MODEL", ""),
         description="Target model identifier",
     )
     llm_history_limit: int = Field(
         default=int(os.getenv("LLM_HISTORY_LIMIT", "100")),
         description="Maximum number of past messages to send in LLM prompt context",
+    )
+    cli_llm_override: bool = Field(
+        default=False,
+        description="Whether LLM parameters were explicitly passed via CLI flags",
     )
 
     # STT Settings
@@ -81,7 +96,7 @@ class Settings(BaseModel):
     )
 
 
-def get_settings() -> Settings:
+def get_settings(argv: list[str] | None = None) -> Settings:
     parser = argparse.ArgumentParser(description="Voice Chat Backend Server")
     parser.add_argument("--host", type=str, default=os.getenv("HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
@@ -94,12 +109,12 @@ def get_settings() -> Settings:
     parser.add_argument(
         "--engine",
         type=str,
-        default=os.getenv("LLM_ENGINE", "lmstudio"),
+        default=None,
         choices=["lmstudio", "ollama", "openai", "openrouter"],
     )
-    parser.add_argument("--model", type=str, default=os.getenv("LLM_MODEL", None))
-    parser.add_argument("--base-url", type=str, default=os.getenv("LLM_BASE_URL", None))
-    parser.add_argument("--api-key", type=str, default=os.getenv("LLM_API_KEY", None))
+    parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--base-url", type=str, default=None)
+    parser.add_argument("--api-key", type=str, default=None)
     parser.add_argument("--mongo-uri", type=str, default=os.getenv("MONGO_URI", None))
     parser.add_argument(
         "--stt-model",
@@ -114,39 +129,24 @@ def get_settings() -> Settings:
         help="Maximum past messages to send in LLM prompt context",
     )
 
-    args, _ = parser.parse_known_args()
+    raw_argv = argv if argv is not None else sys.argv[1:]
+    cli_llm_override = any(
+        arg.split("=")[0] in ("--engine", "--model", "--base-url", "--api-key")
+        for arg in raw_argv
+    )
+    args, _ = parser.parse_known_args(raw_argv)
 
-    engine = args.engine.lower()
-    base_url = args.base_url
-    if not base_url:
-        if engine == "ollama":
-            base_url = "http://127.0.0.1:11434/v1"
-        elif engine == "openai":
-            base_url = "https://api.openai.com/v1"
-        elif engine == "openrouter":
-            base_url = "https://openrouter.ai/api/v1"
-        else:  # lmstudio default
-            base_url = "http://127.0.0.1:1234/v1"
-
-    model = args.model
-    if not model:
-        if engine == "ollama":
-            model = "llama3"
-        elif engine == "openai":
-            model = "gpt-4o-mini"
-        elif engine == "openrouter":
-            model = "meta-llama/llama-3.3-70b-instruct"
-        else:  # lmstudio default
-            model = "google/gemma-3-4b-it-qat"
-
+    engine = (args.engine or os.getenv("LLM_ENGINE", "")).lower()
+    base_url = args.base_url or os.getenv("LLM_BASE_URL", "")
+    model = args.model or os.getenv("LLM_MODEL", "")
     api_key = args.api_key or os.getenv("LLM_API_KEY", "not-needed")
     if engine == "openai" and "api.openai.com" in base_url and api_key == "not-needed":
         print(
             "⚠️  Engine 'openai' targets https://api.openai.com/v1 with no API key. "
-            "For a local OpenAI-compatible server, pass --base-url (e.g. http://127.0.0.1:1234/v1); "
-            "for real OpenAI, pass --api-key."
+            "For a local OpenAI-compatible server, pass --base-url "
+            "(e.g. http://127.0.0.1:1234/v1); for real OpenAI, pass --api-key."
         )
-    mongo_uri = args.mongo_uri or os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    mongo_uri = args.mongo_uri or os.getenv("MONGO_URI", "")
     stt_model_name = args.stt_model or os.getenv("STT_MODEL_NAME", PARAKEET_REPO_ID)
 
     return Settings(
@@ -158,6 +158,7 @@ def get_settings() -> Settings:
         llm_api_key=api_key,
         llm_model=model,
         llm_history_limit=args.history_limit,
+        cli_llm_override=cli_llm_override,
         mongo_uri=mongo_uri,
         stt_model_name=stt_model_name,
     )

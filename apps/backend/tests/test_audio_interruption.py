@@ -24,12 +24,14 @@ class TestAudioInterruption(unittest.TestCase):
     @patch("apps.backend.server.add_message", new_callable=AsyncMock)
     @patch("apps.backend.server.get_messages", new_callable=AsyncMock)
     @patch("apps.backend.server.stream_chat_completion")
-    def test_websocket_stream_and_interrupt(self, mock_stream, mock_get_msgs, mock_add_msg, mock_has_docs):
+    def test_websocket_stream_and_interrupt(
+        self, mock_stream, mock_get_msgs, mock_add_msg, mock_has_docs
+    ):
         mock_has_docs.return_value = False
         mock_get_msgs.return_value = []
         mock_add_msg.return_value = {"session_id": "s-1"}
 
-        async def slow_stream(*args, **kwargs):
+        async def slow_stream(*_args, **_kwargs):
             yield "Hello "
             await asyncio.sleep(0.5)
             yield "world!"

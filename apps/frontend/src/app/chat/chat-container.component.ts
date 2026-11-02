@@ -59,6 +59,15 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
   sessionDocuments = signal<SessionDocument[]>([]);
   isUploadingFile = signal<boolean>(false);
 
+  isLlmModalOpen = signal<boolean>(false);
+  llmEngine = signal<string>('');
+  llmBaseUrl = signal<string>('');
+  llmModel = signal<string>('');
+  llmApiKey = signal<string>('');
+  llmHasApiKey = signal<boolean>(false);
+  llmAuthPrompt = signal<string | null>(null);
+  isSavingLlmSettings = signal<boolean>(false);
+
   readonly isSpeaking = this.audioPlayback.isPlaying;
   readonly isMuted = this.audioPlayback.isMuted;
 
@@ -139,9 +148,20 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
   async ngOnInit() {
     try {
-      const health = await this.api.getHealth();
-      this.healthInfo.set(health);
-      this.isConnected.set(true);
+      if (typeof this.api.getLlmSettings === 'function') {
+        const cfg = await this.api.getLlmSettings();
+        this.applyLlmSettingsState(cfg);
+        this.isConnected.set(true);
+        if (cfg.auth_error) {
+          this.openLlmSettingsModal(
+            cfg.auth_message || 'An API Key is required by the LLM server. Please enter your API Key.'
+          );
+        }
+      } else {
+        const health = await this.api.getHealth();
+        this.healthInfo.set(health);
+        this.isConnected.set(true);
+      }
     } catch (e) {
       console.warn('Backend not yet reachable', e);
     }
@@ -150,6 +170,67 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
 
     // Connect WebSocket for streaming
     this.api.connectWebSocket();
+  }
+
+  private applyLlmSettingsState(cfg: {
+    engine: string;
+    base_url: string;
+    model: string;
+    has_api_key: boolean;
+  }): void {
+    this.llmEngine.set(cfg.engine);
+    this.llmBaseUrl.set(cfg.base_url);
+    this.llmModel.set(cfg.model);
+    this.llmHasApiKey.set(Boolean(cfg.has_api_key));
+    this.healthInfo.set({ engine: cfg.engine, model: cfg.model, base_url: cfg.base_url });
+  }
+
+  openLlmSettingsModal(promptMessage: string | null = null): void {
+    const info = this.healthInfo();
+    if (info?.engine) this.llmEngine.set(info.engine);
+    if (info?.base_url) this.llmBaseUrl.set(info.base_url);
+    if (info?.model) this.llmModel.set(info.model);
+    this.llmApiKey.set('');
+    this.llmAuthPrompt.set(promptMessage);
+    this.isLlmModalOpen.set(true);
+  }
+
+  closeLlmSettingsModal(): void {
+    this.isLlmModalOpen.set(false);
+    this.llmApiKey.set('');
+    this.llmAuthPrompt.set(null);
+  }
+
+  async saveLlmSettings(): Promise<void> {
+    const base_url = this.llmBaseUrl().trim();
+    const model = this.llmModel().trim();
+    if (!base_url || !model) return;
+
+    this.isSavingLlmSettings.set(true);
+    try {
+      const payload: { engine: string; base_url: string; model: string; api_key?: string } = {
+        engine: this.llmEngine(),
+        base_url,
+        model,
+      };
+      if (this.llmApiKey().trim()) {
+        payload.api_key = this.llmApiKey().trim();
+      }
+      const updated = await this.api.updateLlmSettings(payload);
+      this.applyLlmSettingsState(updated);
+      this.llmApiKey.set('');
+      if (updated.auth_error) {
+        this.llmAuthPrompt.set(
+          updated.auth_message || 'An API Key is required by the LLM server. Please enter your API Key.'
+        );
+      } else {
+        this.closeLlmSettingsModal();
+      }
+    } catch (e: any) {
+      this.llmAuthPrompt.set(e.message || 'Failed to save LLM configuration.');
+    } finally {
+      this.isSavingLlmSettings.set(false);
+    }
   }
 
   ngOnDestroy() {
@@ -414,6 +495,9 @@ export class ChatContainerComponent implements OnInit, OnDestroy {
         this.isStreaming.set(false);
         this.streamingText.set('');
         this.chatHistory()?.scrollToBottom(true);
+        if (event.full_text?.includes('[Error: Authentication failed')) {
+          this.openLlmSettingsModal('An API Key is required by the LLM server. Please enter your API Key.');
+        }
       }
 
       if (this.isVadActive()) {

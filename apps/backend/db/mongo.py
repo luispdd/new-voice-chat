@@ -50,7 +50,10 @@ def get_db() -> AsyncIOMotorDatabase:
 
 # Helper CRUD functions for Sessions and Messages
 
-async def create_session(title: str = "New Conversation", user_id: str = "default_user") -> dict[str, Any]:
+async def create_session(
+    title: str = "New Conversation",
+    user_id: str = "default_user",
+) -> dict[str, Any]:
     db = get_db()
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -133,3 +136,33 @@ async def delete_session(session_id: str) -> bool:
     await db.documents.delete_many({"session_id": session_id})
     res = await db.sessions.delete_one({"session_id": session_id})
     return res.deleted_count > 0
+
+
+async def get_llm_settings() -> Optional[dict[str, Any]]:
+    db = get_db()
+    return await db.settings.find_one({"_id": "llm_config"})
+
+
+async def save_llm_settings(
+    engine: str,
+    base_url: str,
+    model: str,
+    api_key: Optional[str] = None,
+) -> dict[str, Any]:
+    db = get_db()
+    existing = await db.settings.find_one({"_id": "llm_config"})
+    resolved_key = (
+        api_key
+        if (api_key is not None and api_key != "")
+        else (existing or {}).get("api_key", "")
+    )
+    doc = {
+        "_id": "llm_config",
+        "engine": engine,
+        "base_url": base_url,
+        "model": model,
+        "api_key": resolved_key,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.settings.replace_one({"_id": "llm_config"}, doc, upsert=True)
+    return doc

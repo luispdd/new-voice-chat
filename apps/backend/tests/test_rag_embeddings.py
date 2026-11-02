@@ -11,6 +11,16 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from apps.backend.services.rag import (
+    _cosine_similarity,
+    _embed_sync,
+    delete_session_documents,
+    embed_texts,
+    ingest_document,
+    search_relevant_chunks,
+    session_has_documents,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -25,7 +35,7 @@ def _make_mock_db(documents: list[dict]) -> MagicMock:
             yield doc
 
     # find() returns an object whose .limit() returns an async iterable
-    def _find_side_effect(query_filter=None, projection=None):
+    def _find_side_effect(query_filter=None, _projection=None):
         filtered = documents
         if query_filter:
             filtered = [
@@ -54,13 +64,11 @@ def _make_mock_db(documents: list[dict]) -> MagicMock:
 
 class TestEmbedTexts(unittest.TestCase):
     def test_single_text_returns_384_dim(self):
-        from apps.backend.services.rag import embed_texts
         result = asyncio.run(embed_texts(["Hello world"]))
         self.assertEqual(len(result), 1)
         self.assertEqual(len(result[0]), 384)
 
     def test_batch_returns_correct_count(self):
-        from apps.backend.services.rag import embed_texts
         texts = ["first sentence", "second sentence", "third sentence"]
         result = asyncio.run(embed_texts(texts))
         self.assertEqual(len(result), 3)
@@ -68,7 +76,6 @@ class TestEmbedTexts(unittest.TestCase):
             self.assertEqual(len(emb), 384)
 
     def test_values_are_floats(self):
-        from apps.backend.services.rag import embed_texts
         result = asyncio.run(embed_texts(["sample text"]))
         for val in result[0]:
             self.assertIsInstance(val, float)
@@ -80,18 +87,15 @@ class TestEmbedTexts(unittest.TestCase):
 
 class TestCosineSimilarity(unittest.TestCase):
     def test_identical_vectors_score_one(self):
-        from apps.backend.services.rag import _cosine_similarity
         v = [1.0, 0.0, 0.5]
         self.assertAlmostEqual(_cosine_similarity(v, v), 1.0, places=5)
 
     def test_opposite_vectors_score_minus_one(self):
-        from apps.backend.services.rag import _cosine_similarity
         a = [1.0, 0.0]
         b = [-1.0, 0.0]
         self.assertAlmostEqual(_cosine_similarity(a, b), -1.0, places=5)
 
     def test_zero_vector_returns_zero(self):
-        from apps.backend.services.rag import _cosine_similarity
         a = [0.0, 0.0]
         b = [1.0, 0.5]
         self.assertEqual(_cosine_similarity(a, b), 0.0)
@@ -110,8 +114,7 @@ class TestIngestDocument(unittest.TestCase):
         mock_db = _make_mock_db([])
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import ingest_document
-            doc = self._run(
+            self._run(
                 ingest_document(
                     title="Test Doc",
                     content="The quick brown fox jumps over the lazy dog. " * 10,
@@ -130,8 +133,7 @@ class TestIngestDocument(unittest.TestCase):
         mock_db = _make_mock_db([])
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import ingest_document
-            doc = self._run(
+            self._run(
                 ingest_document(
                     title="Scoped Doc",
                     content="Some content here.",
@@ -147,8 +149,7 @@ class TestIngestDocument(unittest.TestCase):
         mock_db = _make_mock_db([])
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import ingest_document
-            doc = self._run(ingest_document(title="Global", content="Global knowledge."))
+            self._run(ingest_document(title="Global", content="Global knowledge."))
 
         inserted = mock_db.documents.insert_one.call_args[0][0]
         self.assertNotIn("session_id", inserted)
@@ -157,8 +158,7 @@ class TestIngestDocument(unittest.TestCase):
         mock_db = _make_mock_db([])
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import ingest_document
-            doc = self._run(ingest_document(title="Short", content="Short text."))
+            self._run(ingest_document(title="Short", content="Short text."))
 
         inserted = mock_db.documents.insert_one.call_args[0][0]
         self.assertEqual(len(inserted["chunks"]), 1)
@@ -176,7 +176,6 @@ class TestSearchRelevantChunks(unittest.TestCase):
         self, chunk_texts: list[str], title: str = "Doc", session_id: str | None = None
     ) -> MagicMock:
         """Pre-embed chunk_texts and return a mock DB containing them."""
-        from apps.backend.services.rag import _embed_sync
         embeddings = _embed_sync(chunk_texts)
         doc: dict = {
             "_id": "test-id",
@@ -196,7 +195,6 @@ class TestSearchRelevantChunks(unittest.TestCase):
             session_id="s1",
         )
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import search_relevant_chunks
             results = self._run(search_relevant_chunks("programming", session_id="s1", limit=2))
 
         self.assertLessEqual(len(results), 2)
@@ -212,7 +210,6 @@ class TestSearchRelevantChunks(unittest.TestCase):
             session_id="s1",
         )
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import search_relevant_chunks
             results = self._run(search_relevant_chunks("feline animal", session_id="s1", limit=3))
 
         self.assertTrue(len(results) > 0)
@@ -220,8 +217,6 @@ class TestSearchRelevantChunks(unittest.TestCase):
 
     def test_session_scoping_excludes_other_sessions(self):
         """Documents from other sessions should not appear in results."""
-        from apps.backend.services.rag import _embed_sync
-
         embeddings_s1 = _embed_sync(["Cats are fluffy animals."])
         embeddings_s2 = _embed_sync(["Dogs are loyal pets."])
 
@@ -230,20 +225,33 @@ class TestSearchRelevantChunks(unittest.TestCase):
                 "_id": "doc-s1",
                 "title": "Cat Doc",
                 "session_id": "session-1",
-                "chunks": [{"chunk_id": "c0", "text": "Cats are fluffy animals.", "embedding": embeddings_s1[0]}],
+                "chunks": [
+                    {
+                        "chunk_id": "c0",
+                        "text": "Cats are fluffy animals.",
+                        "embedding": embeddings_s1[0],
+                    }
+                ],
             },
             {
                 "_id": "doc-s2",
                 "title": "Dog Doc",
                 "session_id": "session-2",
-                "chunks": [{"chunk_id": "c1", "text": "Dogs are loyal pets.", "embedding": embeddings_s2[0]}],
+                "chunks": [
+                    {
+                        "chunk_id": "c1",
+                        "text": "Dogs are loyal pets.",
+                        "embedding": embeddings_s2[0],
+                    }
+                ],
             },
         ]
         mock_db = _make_mock_db(docs)
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import search_relevant_chunks
-            results = self._run(search_relevant_chunks("pets animals", session_id="session-1", limit=5))
+            results = self._run(
+                search_relevant_chunks("pets animals", session_id="session-1", limit=5)
+            )
 
         # Only session-1 docs should appear
         for r in results:
@@ -252,7 +260,6 @@ class TestSearchRelevantChunks(unittest.TestCase):
     def test_empty_query_returns_empty(self):
         mock_db = self._make_db_with_embedded_doc(["Some content"], session_id="s1")
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import search_relevant_chunks
             results = self._run(search_relevant_chunks("   ", session_id="s1", limit=3))
 
         self.assertEqual(results, [])
@@ -267,8 +274,13 @@ class TestSearchRelevantChunks(unittest.TestCase):
             session_id="s1",
         )
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import search_relevant_chunks
-            results = self._run(search_relevant_chunks("machine learning neural network", session_id="s1", limit=3))
+            results = self._run(
+                search_relevant_chunks(
+                    "machine learning neural network",
+                    session_id="s1",
+                    limit=3,
+                )
+            )
 
         scores = [r["score"] for r in results]
         self.assertEqual(scores, sorted(scores, reverse=True))
@@ -287,7 +299,6 @@ class TestSessionDocumentHelpers(unittest.TestCase):
         mock_db.documents.find_one = AsyncMock(return_value={"_id": "doc1"})
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import session_has_documents
             result = self._run(session_has_documents("s1"))
 
         self.assertTrue(result)
@@ -298,7 +309,6 @@ class TestSessionDocumentHelpers(unittest.TestCase):
         mock_db.documents.find_one = AsyncMock(return_value=None)
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import session_has_documents
             result = self._run(session_has_documents("empty-session"))
 
         self.assertFalse(result)
@@ -310,7 +320,6 @@ class TestSessionDocumentHelpers(unittest.TestCase):
         )
 
         with patch("apps.backend.services.rag.get_db", return_value=mock_db):
-            from apps.backend.services.rag import delete_session_documents
             count = self._run(delete_session_documents("s1"))
 
         self.assertEqual(count, 3)

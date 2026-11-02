@@ -4,7 +4,7 @@ import io
 import re
 import unicodedata
 import wave
-from typing import AsyncGenerator, Generator
+from typing import Generator
 from piper.voice import PiperVoice
 from apps.backend.common.model_manager import load_piper_voice_model
 from apps.backend.config import settings
@@ -80,7 +80,7 @@ def sanitize_for_tts(text: str) -> str:
     # 6. Remove symbols, bullets, asterisks, brackets, backslashes, etc.
     cleaned = BULLET_AND_SYMBOLS.sub(" ", cleaned)
 
-    # 7. Strip unreadable Unicode characters (Emojis, Pictographs, Dingbats, Modifier/Format symbols)
+    # 7. Strip unreadable Unicode characters (Emojis, Pictographs, Dingbats, Format symbols)
     chars = []
     for char in cleaned:
         cat = unicodedata.category(char)

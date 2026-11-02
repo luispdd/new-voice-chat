@@ -2,6 +2,7 @@
 
 import io
 import threading
+from typing import Any
 import numpy as np
 import soundfile as sf
 from pydub import AudioSegment
@@ -11,7 +12,7 @@ from apps.backend.config import settings
 SAMPLE_RATE = 16000
 MAX_UTTERANCE_SECONDS = 60
 
-_stt_model = None
+_stt_model: Any = None
 _stt_lock = threading.Lock()  # The recognizer is shared by the WebSocket and REST paths
 
 
@@ -78,11 +79,15 @@ def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
                         sample_width=2,
                         channels=1,
                     ).set_frame_rate(16000)
-                    audio_np = np.array(audio_seg.get_array_of_samples(), dtype=np.float32) / 32768.0
+                    raw_fallback = audio_seg.get_array_of_samples()
+                    audio_np = np.array(raw_fallback, dtype=np.float32) / 32768.0
                 else:
                     audio_np = audio
         except Exception as sf_err:
-            print(f"[STT Diagnostics] Audio conversion failed. pydub_err: {pydub_err}, sf_err: {sf_err}")
+            print(
+                f"[STT Diagnostics] Audio conversion failed. "
+                f"pydub_err: {pydub_err}, sf_err: {sf_err}"
+            )
             raise
 
     # Remove DC offset
@@ -92,7 +97,10 @@ def audio_bytes_to_float32(audio_bytes: bytes) -> np.ndarray:
     duration = len(audio_np) / 16000
     peak = float(np.max(np.abs(audio_np))) if len(audio_np) > 0 else 0.0
     rms = float(np.sqrt(np.mean(audio_np**2))) if len(audio_np) > 0 else 0.0
-    print(f"[STT Diagnostics] Audio: 16000Hz mono, Duration: {duration:.3f}s, Peak: {peak:.3f}, RMS: {rms:.3f}")
+    print(
+        f"[STT Diagnostics] Audio: 16000Hz mono, "
+        f"Duration: {duration:.3f}s, Peak: {peak:.3f}, RMS: {rms:.3f}"
+    )
 
     return audio_np
 
@@ -110,7 +118,10 @@ def transcribe_pcm(audio_data: np.ndarray) -> str:
 
     duration = len(audio_data) / SAMPLE_RATE
     if len(audio_data) < 1600:  # Less than 0.1 seconds of audio
-        print(f"[STT Diagnostics] Audio segment too short: {len(audio_data)} samples ({duration:.3f}s)")
+        print(
+            f"[STT Diagnostics] Audio segment too short: "
+            f"{len(audio_data)} samples ({duration:.3f}s)"
+        )
         return ""
 
     # Parakeet handles leading/trailing silence well; trimming clipped quiet speech onsets
@@ -120,7 +131,10 @@ def transcribe_pcm(audio_data: np.ndarray) -> str:
 
     max_samples = MAX_UTTERANCE_SECONDS * SAMPLE_RATE
     if len(audio_data) > max_samples:
-        print(f"[STT Diagnostics] Audio segment too long: {duration:.3f}s. Truncating to {MAX_UTTERANCE_SECONDS}s.")
+        print(
+            f"[STT Diagnostics] Audio segment too long: {duration:.3f}s. "
+            f"Truncating to {MAX_UTTERANCE_SECONDS}s."
+        )
         audio_data = audio_data[:max_samples]
 
     model = get_stt_model()

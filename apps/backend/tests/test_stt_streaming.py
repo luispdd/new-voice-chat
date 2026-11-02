@@ -133,9 +133,13 @@ class TestUtteranceBuffer(unittest.IsolatedAsyncioTestCase):
 class TestWebSocketAudio(unittest.TestCase):
     def test_audio_stream_returns_transcript_without_creating_session(self):
         client = TestClient(app)
-        with patch("apps.backend.services.stt_stream.transcribe_pcm", return_value="hello there"), patch(
-            "apps.backend.server.create_session"
-        ) as create_session:
+        with (
+            patch(
+                "apps.backend.services.stt_stream.transcribe_pcm",
+                return_value="hello there",
+            ),
+            patch("apps.backend.server.create_session") as create_session,
+        ):
             with client.websocket_connect("/ws/chat") as ws:
                 ws.send_text(json.dumps({"type": "audio_start", "sample_rate": 16000}))
                 ws.send_bytes(pcm(0.5, 0.3))
@@ -157,4 +161,3 @@ class TestWebSocketAudio(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

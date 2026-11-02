@@ -53,13 +53,97 @@
 
     <div class="sidebar-footer">
       @if (healthInfo()) {
-        <div class="health-badge">
+        <button
+          type="button"
+          class="health-badge"
+          (click)="openLlmSettingsModal()"
+          title="Configure LLM Engine & Model"
+        >
           <span class="status-dot"></span>
-          <span>{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
-        </div>
+          <span class="health-badge-label">{{ healthInfo()?.engine | uppercase }} ({{ healthInfo()?.model }})</span>
+          <i class="pi pi-cog settings-icon"></i>
+        </button>
       }
     </div>
   </aside>
+
+  @if (isLlmModalOpen()) {
+    <div class="llm-modal-backdrop" (click)="closeLlmSettingsModal()">
+      <div class="llm-modal glass-panel" (click)="$event.stopPropagation()">
+        <div class="llm-modal-header">
+          <h3><i class="pi pi-sliders-h"></i> LLM Configuration</h3>
+          <button type="button" class="icon-btn" (click)="closeLlmSettingsModal()" title="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+
+        @if (llmAuthPrompt()) {
+          <div class="llm-modal-alert" role="alert">
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>{{ llmAuthPrompt() }}</span>
+          </div>
+        }
+
+        <div class="llm-modal-body">
+          <label class="form-field">
+            <span>Engine</span>
+            <select [ngModel]="llmEngine()" (ngModelChange)="llmEngine.set($event)">
+              <option value="openai">OpenAI / Compatible</option>
+              <option value="lmstudio">LM Studio</option>
+              <option value="ollama">Ollama</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </label>
+
+          <label class="form-field">
+            <span>Base URL</span>
+            <input
+              type="text"
+              class="llm-url-input"
+              [ngModel]="llmBaseUrl()"
+              (ngModelChange)="llmBaseUrl.set($event)"
+              placeholder="Enter LLM Base URL"
+            />
+          </label>
+
+          <label class="form-field">
+            <span>Model</span>
+            <input
+              type="text"
+              class="llm-model-input"
+              [ngModel]="llmModel()"
+              (ngModelChange)="llmModel.set($event)"
+              placeholder="Enter LLM Model"
+            />
+          </label>
+
+          <label class="form-field">
+            <span>API Key</span>
+            <input
+              type="password"
+              class="llm-apikey-input"
+              autocomplete="new-password"
+              [ngModel]="llmApiKey()"
+              (ngModelChange)="llmApiKey.set($event)"
+              [placeholder]="llmHasApiKey() ? '•••••••••••••••• (Saved - leave blank to keep)' : 'Enter API Key'"
+            />
+          </label>
+        </div>
+
+        <div class="llm-modal-footer">
+          <button type="button" class="modal-btn cancel" (click)="closeLlmSettingsModal()">Cancel</button>
+          <button
+            type="button"
+            class="modal-btn save"
+            [disabled]="isSavingLlmSettings() || !llmBaseUrl().trim() || !llmModel().trim()"
+            (click)="saveLlmSettings()"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 
   <!-- Main Chat Area -->
   <main class="chat-main">

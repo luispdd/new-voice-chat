@@ -26,7 +26,7 @@ _EMBEDDING_DIM = 384
 
 
 @lru_cache(maxsize=1)
-def _get_embedding_model() -> TextEmbedding:
+def get_embedding_model() -> TextEmbedding:
     """Return (and lazily initialize) the FastEmbed model singleton."""
     print(f"📦 Loading FastEmbed model '{_EMBEDDING_MODEL}'...")
     model = TextEmbedding(model_name=_EMBEDDING_MODEL)
@@ -34,9 +34,12 @@ def _get_embedding_model() -> TextEmbedding:
     return model
 
 
+_get_embedding_model = get_embedding_model
+
+
 def _embed_sync(texts: list[str]) -> list[list[float]]:
     """Generate embeddings synchronously (blocking). Must run in a thread."""
-    model = _get_embedding_model()
+    model = get_embedding_model()
     # fastembed returns a generator of np.ndarray
     embeddings = list(model.embed(texts))
     return [emb.tolist() for emb in embeddings]

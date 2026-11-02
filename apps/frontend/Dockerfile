@@ -21,8 +21,9 @@ FROM nginx:alpine
 # Copy built static SPA assets from builder stage
 COPY --from=builder /app/dist/apps/frontend/browser /usr/share/nginx/html
 
-# Copy custom reverse proxy & SSL Nginx configuration
-COPY apps/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# Copy custom reverse proxy & SSL Nginx configuration template
+ENV NGINX_ENVSUBST_FILTER=^BACKEND_URL$
+COPY apps/frontend/nginx.conf /etc/nginx/templates/default.conf.template
 
 # Expose standard HTTP and HTTPS ports
 EXPOSE 80 443

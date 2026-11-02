@@ -5,7 +5,7 @@ import base64
 from contextlib import asynccontextmanager
 import json
 import re
-from typing import Any, Optional
+from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
@@ -22,12 +22,21 @@ from apps.backend.db.mongo import (
     add_message,
     get_messages,
     delete_session,
+    get_llm_settings,
+    save_llm_settings,
 )
 from apps.backend.services.stt import transcribe_audio, get_stt_model
 from apps.backend.services.stt_stream import UtteranceBuffer
 from apps.backend.services.tts import text_to_wav_bytes, get_voice_model, sanitize_for_tts
-from apps.backend.services.llm import stream_chat_completion, generate_chat_completion, SYSTEM_PROMPT
+from apps.backend.services.llm import (
+    stream_chat_completion,
+    generate_chat_completion,
+    reset_llm_client,
+    check_llm_auth_status,
+    SYSTEM_PROMPT,
+)
 from apps.backend.services.rag import (
+    get_embedding_model,
     ingest_document,
     search_relevant_chunks,
     session_has_documents,
@@ -36,10 +45,22 @@ from apps.backend.services.rag import (
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     # Startup: connect DB and warmup neural models
     print("🚀 Initializing Voice Chat Backend...")
     await init_db()
+    if not settings.cli_llm_override:
+        try:
+            stored_llm = await get_llm_settings()
+            if stored_llm:
+                settings.engine = stored_llm.get("engine") or settings.engine
+                settings.llm_base_url = stored_llm.get("base_url") or settings.llm_base_url
+                settings.llm_model = stored_llm.get("model") or settings.llm_model
+                if stored_llm.get("api_key"):
+                    settings.llm_api_key = stored_llm["api_key"]
+                reset_llm_client()
+        except Exception as e:
+            print(f"⚠️ Warning loading LLM settings from MongoDB: {e}")
     try:
         get_stt_model()
     except Exception as e:
@@ -49,8 +70,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ Warning initializing TTS model: {e}")
     try:
-        from apps.backend.services.rag import _get_embedding_model
-        _get_embedding_model()
+        get_embedding_model()
     except Exception as e:
         print(f"⚠️ Warning initializing RAG embedding model: {e}")
 
@@ -100,6 +120,13 @@ class IngestDocRequest(BaseModel):
     content: str
 
 
+class UpdateLlmSettingsRequest(BaseModel):
+    engine: str
+    base_url: str
+    model: str
+    api_key: Optional[str] = None
+
+
 # REST Endpoints
 
 @app.get("/api/health")
@@ -113,6 +140,53 @@ async def health_check():
     }
 
 
+@app.get("/api/settings/llm")
+async def get_llm_config():
+    auth = await check_llm_auth_status()
+    has_key = bool(settings.llm_api_key and settings.llm_api_key != "not-needed")
+    return {
+        "engine": settings.engine,
+        "base_url": settings.llm_base_url,
+        "model": settings.llm_model,
+        "has_api_key": has_key,
+        "auth_error": auth["auth_error"],
+        "auth_message": auth["auth_message"],
+    }
+
+
+@app.put("/api/settings/llm")
+async def update_llm_config(req: UpdateLlmSettingsRequest):
+    engine = req.engine.strip().lower()
+    if engine not in ("lmstudio", "ollama", "openai", "openrouter"):
+        raise HTTPException(status_code=400, detail="Invalid LLM engine")
+    base_url = req.base_url.strip()
+    model = req.model.strip()
+    if not base_url or not model:
+        raise HTTPException(status_code=400, detail="base_url and model are required")
+
+    saved = await save_llm_settings(
+        engine=engine,
+        base_url=base_url,
+        model=model,
+        api_key=req.api_key,
+    )
+    settings.engine = saved["engine"]
+    settings.llm_base_url = saved["base_url"]
+    settings.llm_model = saved["model"]
+    settings.llm_api_key = saved.get("api_key") or "not-needed"
+    reset_llm_client()
+    auth = await check_llm_auth_status()
+    has_key = bool(settings.llm_api_key and settings.llm_api_key != "not-needed")
+    return {
+        "engine": settings.engine,
+        "base_url": settings.llm_base_url,
+        "model": settings.llm_model,
+        "has_api_key": has_key,
+        "auth_error": auth["auth_error"],
+        "auth_message": auth["auth_message"],
+    }
+
+
 # Session Management
 
 @app.get("/api/sessions")
@@ -123,7 +197,10 @@ async def list_sessions(user_id: str = "default_user"):
 
 @app.post("/api/sessions")
 async def new_session(req: CreateSessionRequest):
-    session = await create_session(title=req.title or "New Conversation", user_id=req.user_id or "default_user")
+    session = await create_session(
+        title=req.title or "New Conversation",
+        user_id=req.user_id or "default_user",
+    )
     return {"session": session}
 
 
@@ -199,7 +276,9 @@ async def chat(req: ChatRequest):
         relevant_chunks = await search_relevant_chunks(req.text, session_id=req.session_id)
         if relevant_chunks:
             context_str = "\n\n".join([f"[{c['title']}]: {c['text']}" for c in relevant_chunks])
-            system_prompt = f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
+            system_prompt = (
+                f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
+            )
 
     if req.stream:
         async def event_generator():
@@ -215,7 +294,11 @@ async def chat(req: ChatRequest):
 
     # Non-streamed response
     assistant_text = await generate_chat_completion(history, system_prompt=system_prompt)
-    assistant_msg = await add_message(session_id=req.session_id, role="assistant", text=assistant_text)
+    assistant_msg = await add_message(
+        session_id=req.session_id,
+        role="assistant",
+        text=assistant_text,
+    )
 
     return {
         "reply": assistant_text,
@@ -246,8 +329,8 @@ async def upload_session_document(session_id: str, file: UploadFile = File(...))
     raw = await file.read()
     try:
         content = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File must be valid UTF-8 text")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="File must be valid UTF-8 text") from exc
 
     if not content.strip():
         raise HTTPException(status_code=400, detail="File is empty")
@@ -279,7 +362,9 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
     try:
         # Save user message
         await add_message(session_id=session_id, role="user", text=user_text)
-        await websocket.send_json({"type": "user_message", "text": user_text, "session_id": session_id})
+        await websocket.send_json(
+            {"type": "user_message", "text": user_text, "session_id": session_id}
+        )
 
         # Stream LLM tokens and accumulate for sentence-level TTS
         history = await get_messages(session_id, limit=settings.llm_history_limit)
@@ -290,7 +375,10 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
             relevant_chunks = await search_relevant_chunks(user_text, session_id=session_id)
             if relevant_chunks:
                 context_str = "\n\n".join([f"[{c['title']}]: {c['text']}" for c in relevant_chunks])
-                system_prompt = f"{SYSTEM_PROMPT}\n\nUse the following knowledge context to answer:\n{context_str}"
+                system_prompt = (
+                    f"{SYSTEM_PROMPT}\n\n"
+                    f"Use the following knowledge context to answer:\n{context_str}"
+                )
 
         async for token in stream_chat_completion(history, system_prompt=system_prompt):
             full_reply += token
@@ -358,7 +446,8 @@ async def _stream_chat_and_synthesize(websocket: WebSocket, session_id: str, use
 async def websocket_chat(websocket: WebSocket):
     """
     Bi-directional streaming WebSocket:
-    - Receives text, interrupt, or streamed audio (audio_start, binary PCM frames, audio_pause/audio_resume, audio_end)
+    - Receives text, interrupt, or streamed audio (audio_start, binary PCM frames,
+      audio_pause/audio_resume, audio_end)
     - Streams LLM text tokens and synthesized audio chunks back to the client
     - Supports real-time cancellation / barge-in
     """

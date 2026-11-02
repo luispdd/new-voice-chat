@@ -39,7 +39,7 @@ This repository follows the **Spec-Driven Development (SDD)** methodology. All a
 │   ├── backlog/             # Future tasks (FastEmbed, barge-in)
 │   ├── active/              # Tasks currently in development
 │   ├── review/              # Tasks pending review/verification
-│   └── completed/           # Verified implemented tasks (001 - 027)
+│   └── completed/           # Verified implemented tasks (001 - 028)
 └── decisions/               # Architecture Decision Records (ADRs)
     ├── 001-nx-monorepo-with-bun-and-uv.md
     ├── 002-docker-vs-host-execution-strategy.md
@@ -68,3 +68,8 @@ This repository follows the **Spec-Driven Development (SDD)** methodology. All a
 ## Code Style Constraints
 1. To refer to local files, use relative paths starting with `./` or `../`.
 2. Avoid absolute paths like `/home/username/...`.
+3. Never hardcode service URLs (`MONGO_URI`, `BACKEND_URL`, `LLM_BASE_URL`), default LLM engines, or model names in TypeScript signals, HTML templates, Python config defaults, or `nginx.conf`; define them in `.env` / `.env.example` and use domain-style hostnames (`backend.localhost`, `mongodb.localhost`).
+
+## Operational Pitfalls & Gotchas
+- **Local LLM Bound to `127.0.0.1` Only**: The host LLM server listens strictly on `127.0.0.1` (not `0.0.0.0`), so Docker bridge `host.docker.internal` (`172.x.x.x`) will fail with `APIConnectionError`. Keep `network_mode: host` and `extra_hosts` (`*.localhost:127.0.0.1`) in `docker-compose.prod.yml`, with `frontend` depending on `backend` (`condition: service_healthy`) to avoid `502`s during ONNX model warmup.
+- **Sandboxed Frontend Build**: `bun run build` (`production`) fetches Google Fonts for CSS inlining and fails in offline sandboxes (`EAI_AGAIN fonts.googleapis.com`). Verify builds in the sandbox with `bunx nx build frontend --configuration=development` and `bunx tsc -p apps/frontend/tsconfig.app.json --noEmit`.

@@ -3,7 +3,29 @@
   "python.analysis.extraPaths": [
     "${workspaceFolder}"
   ],
+  "python.analysis.typeCheckingMode": "standard",
   "python.autoComplete.extraPaths": [
     "${workspaceFolder}"
-  ]
+  ],
+  "basedpyright.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "basedpyright.analysis.typeCheckingMode": "standard",
+  "pylint.interpreter": [
+    "${workspaceFolder}/apps/backend/.venv/bin/python"
+  ],
+  "pylint.args": [
+    "--rcfile=${workspaceFolder}/apps/backend/pyproject.toml",
+    "--init-hook=import sys; sys.path.extend(['${workspaceFolder}', '${workspaceFolder}/apps/backend/.venv/lib/python3.13/site-packages'])"
+  ],
+  "mypy-type-checker.interpreter": [
+    "${workspaceFolder}/apps/backend/.venv/bin/python"
+  ],
+  "mypy-type-checker.args": [
+    "--config-file=${workspaceFolder}/apps/backend/pyproject.toml",
+    "--python-executable=${workspaceFolder}/apps/backend/.venv/bin/python"
+  ],
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}"
+  }
 }

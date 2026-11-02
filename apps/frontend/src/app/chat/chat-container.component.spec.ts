@@ -19,7 +19,27 @@ describe('ChatContainerComponent', () => {
   const wsMessagesSig = signal<any[]>([]);
 
   const mockApiService = {
-    getHealth: () => Promise.resolve({ engine: 'ollama', model: 'llama3' }),
+    getHealth: () => Promise.resolve({ engine: 'openai', model: 'unsloth/qwen3.5-4B-GGUF' }),
+    getLlmSettings: vi.fn(() =>
+      Promise.resolve({
+        engine: 'openai',
+        base_url: 'http://127.0.0.1:8888/v1',
+        model: 'unsloth/qwen3.5-4B-GGUF',
+        has_api_key: true,
+        auth_error: false,
+        auth_message: null,
+      })
+    ),
+    updateLlmSettings: vi.fn((payload: any) =>
+      Promise.resolve({
+        engine: payload.engine,
+        base_url: payload.base_url,
+        model: payload.model,
+        has_api_key: true,
+        auth_error: false,
+        auth_message: null,
+      })
+    ),
     getSessions: () => Promise.resolve([]),
     createSession: (title = 'New Conversation') => Promise.resolve({ session_id: 'test-1', title }),
     updateSession: (sessionId: string, title: string) => Promise.resolve({ session_id: sessionId, title }),
@@ -265,5 +285,52 @@ describe('ChatContainerComponent', () => {
       session_id: 'test-session-123',
       text: 'New query after barge-in',
     });
+  });
+
+  it('should open LLM settings modal on clicking health badge without exposing stored API key', async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const badge = fixture.debugElement.query(By.css('.health-badge'));
+    expect(badge).toBeTruthy();
+    badge.nativeElement.click();
+    fixture.detectChanges();
+
+    expect(component.isLlmModalOpen()).toBe(true);
+    expect(component.llmApiKey()).toBe('');
+    const pwdInput = fixture.debugElement.query(By.css('.llm-apikey-input'));
+    expect(pwdInput.nativeElement.type).toBe('password');
+    expect(pwdInput.nativeElement.value).toBe('');
+
+    component.llmModel.set('custom-model');
+    await component.saveLlmSettings();
+    fixture.detectChanges();
+
+    expect(mockApiService.updateLlmSettings).toHaveBeenCalledWith({
+      engine: 'openai',
+      base_url: 'http://127.0.0.1:8888/v1',
+      model: 'custom-model',
+    });
+    expect(component.isLlmModalOpen()).toBe(false);
+    expect(component.healthInfo()?.model).toBe('custom-model');
+  });
+
+  it('should automatically open LLM settings modal with prompt when auth_error is true on initial connection', async () => {
+    mockApiService.getLlmSettings.mockResolvedValueOnce({
+      engine: 'openai',
+      base_url: 'http://127.0.0.1:8888/v1',
+      model: 'unsloth/qwen3.5-4B-GGUF',
+      has_api_key: false,
+      auth_error: true,
+      auth_message: 'An API Key is required by the LLM server. Please enter your API Key.',
+    });
+
+    await component.ngOnInit();
+    fixture.detectChanges();
+
+    expect(component.isLlmModalOpen()).toBe(true);
+    expect(component.llmAuthPrompt()).toContain('API Key is required');
+    const alertBox = fixture.debugElement.query(By.css('.llm-modal-alert'));
+    expect(alertBox).toBeTruthy();
   });
 });

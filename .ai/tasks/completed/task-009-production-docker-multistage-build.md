@@ -11,12 +11,12 @@ Create multi-stage production Dockerfiles:
 3. `docker-compose.prod.yml`: One-command production deployment with persistent MongoDB volume and Nginx SSL certificates.
 
 ## Implementation Details
-- `apps/frontend/Dockerfile`: Multi-stage build leveraging `oven/bun:1.2-alpine` for the build step and `nginx:alpine` for the serving image.
-- `apps/frontend/nginx.conf`: Nginx server with SSL on port 443, HTTP-to-HTTPS redirect on port 80, SPA fallback routing, and reverse-proxying for `/api/` and `/ws/`.
+- `apps/frontend/Dockerfile`: Multi-stage build leveraging `oven/bun:1.2-alpine` for the build step and `nginx:alpine` for the serving image, with `NGINX_ENVSUBST_FILTER=^BACKEND_URL$` template substitution on `/etc/nginx/templates/default.conf.template`.
+- `apps/frontend/nginx.conf`: Nginx server with SSL on port 443, HTTP-to-HTTPS redirect on port 80, SPA fallback routing, and dynamic reverse-proxying (`${BACKEND_URL}`) for `/api/` and `/ws/`.
 - `apps/frontend/src/app/core/api.service.ts`: Updated to support reverse proxy routing in production while keeping port 8000 direct access during local port 4200 dev.
-- `apps/backend/scripts/cache_models.py`: Utility script to download and pre-cache Moonshine STT, Piper TTS, and FastEmbed ONNX models during container image build.
+- `apps/backend/scripts/cache_models.py`: Utility script to download and pre-cache Parakeet TDT STT, Piper TTS, and FastEmbed ONNX models during container image build.
 - `apps/backend/Dockerfile`: Production Python 3.13 slim image using `uv`, installing system audio libs (`libsndfile1`, `ffmpeg`), and executing `cache_models.py` in the build layer.
-- `docker-compose.prod.yml`: Full stack definition with MongoDB (`mongodb_data_prod`), Python backend, and Frontend Nginx with SSL certificate volume mounts.
+- `docker-compose.prod.yml`: Full stack definition with MongoDB (`mongodb_data_prod`), Python backend with `network_mode: host`, `extra_hosts` (`backend.localhost`, `mongodb.localhost`), and `/api/health` `healthcheck`, and Frontend Nginx waiting for `backend` `service_healthy` with SSL certificate volume mounts.
 - `package.json`: Added `docker:db:up`/`down` and `docker:stack:up`/`down` scripts.
 
 ## Verification

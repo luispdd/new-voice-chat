@@ -12,6 +12,7 @@ Stores user chat sessions, message histories, and document embeddings in MongoDB
    - `sessions`: `{ _id: string, session_id: string, user_id: string, title: string, created_at: string, last_active: string }`
    - `messages`: `{ _id: string, message_id: string, session_id: string, role: "user" | "assistant", text: string, timestamp: string, audio_url?: string }`
    - `documents`: `{ _id: string, title: string, content: string, session_id?: string, chunks: [ { chunk_id: string, text: string, embedding: float[], metadata: object } ], created_at: string }`
+   - `settings`: `{ _id: "llm_config", engine: string, base_url: string, model: string, api_key: string, updated_at: string }`
 3. **Indexing**:
    - Index on `sessions.last_active` for fast sorted drawer listing.
    - Compound index on `messages (session_id, timestamp)` for rapid conversation history loading.
